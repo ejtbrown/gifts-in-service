@@ -1,4 +1,4 @@
-# ADR 0002: Promote environment branches
+# ADR 0006: Promote environment branches
 
 ## Status
 
@@ -29,6 +29,15 @@ only after application and infrastructure validation succeeds. A successful
 push pipeline on `main` reaches the protected `prod` environment, where the
 maintainer must approve the deployment. Production permits self-approval
 because the repository has one maintainer.
+
+Normal `dev` to `main` promotion pull requests use a merge commit rather than
+squash or rebase. This preserves `dev` as an ancestor of `main`, so later
+promotions contain only changes made since the previous promotion. Feature and
+dependency pull requests into `dev` may still be squashed.
+
+If that ancestry is accidentally lost, reconcile `main` into a branch based on
+`dev`, retain the authoritative `dev` tree while resolving conflicts, and merge
+the reconciliation pull request into `dev` with a merge commit before promoting.
 
 Deployments consume artifacts produced by the successful application job for
 the same commit. Environment branch policies bind `dev` deployments to `dev`
