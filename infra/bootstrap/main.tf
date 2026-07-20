@@ -77,8 +77,10 @@ data "aws_iam_openid_connect_provider" "existing" {
 }
 
 locals {
-  oidc_arn     = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.existing[0].arn
-  environments = toset(["dev", "prod"])
+  oidc_arn                    = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.existing[0].arn
+  environments                = toset(["dev", "prod"])
+  github_repository_segments  = split("/", var.github_repository)
+  github_oidc_repository_name = var.github_repository_ids == null ? var.github_repository : "${local.github_repository_segments[0]}@${var.github_repository_ids.owner_id}/${local.github_repository_segments[1]}@${var.github_repository_ids.repository_id}"
 }
 
 data "aws_iam_policy_document" "github_trust" {
@@ -97,7 +99,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:${each.key}"]
+      values   = ["repo:${local.github_oidc_repository_name}:environment:${each.key}"]
     }
   }
 }
@@ -177,7 +179,7 @@ data "aws_iam_policy_document" "github_plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:dev-plan"]
+      values   = ["repo:${local.github_oidc_repository_name}:environment:dev-plan"]
     }
   }
 }

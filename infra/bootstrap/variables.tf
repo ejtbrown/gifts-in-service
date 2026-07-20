@@ -14,6 +14,22 @@ variable "github_repository" {
     error_message = "github_repository must be exact owner/repository"
   }
 }
+variable "github_repository_ids" {
+  type = object({
+    owner_id      = string
+    repository_id = string
+  })
+  default     = null
+  nullable    = true
+  description = "Immutable GitHub owner and repository IDs for repositories using immutable OIDC subjects"
+  validation {
+    condition = var.github_repository_ids == null || (
+      can(regex("^[0-9]+$", var.github_repository_ids.owner_id)) &&
+      can(regex("^[0-9]+$", var.github_repository_ids.repository_id))
+    )
+    error_message = "github_repository_ids values must contain decimal digits only"
+  }
+}
 variable "create_github_oidc_provider" {
   type    = bool
   default = true

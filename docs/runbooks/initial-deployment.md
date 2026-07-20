@@ -6,9 +6,17 @@ Use a separately authorized AWS operator, Terraform 1.14.x, and the intended reg
 
 ```bash
 terraform -chdir=infra/bootstrap init
-terraform -chdir=infra/bootstrap apply -var='github_repository=OWNER/REPOSITORY'
+terraform -chdir=infra/bootstrap apply \
+  -var='github_repository=OWNER/REPOSITORY' \
+  -var='github_repository_ids={"owner_id":"OWNER_ID","repository_id":"REPOSITORY_ID"}'
 terraform -chdir=infra/bootstrap output
 ```
+
+Obtain immutable IDs with
+`gh api repos/OWNER/REPOSITORY --jq '{owner_id:.owner.id,repository_id:.id}'`.
+Repositories created after July 15, 2026 require these IDs in their GitHub OIDC
+trust subject. Omit `github_repository_ids` only when CloudTrail confirms the
+repository still emits the legacy name-only subject.
 
 Record the state bucket, state KMS ARN, exact dev/prod deploy role ARNs, and read-only plan role ARN in protected GitHub Environment variables. The OIDC trust is restricted to the exact repository and `dev`, `prod`, or `dev-plan` environment; no long-lived AWS keys are used.
 
