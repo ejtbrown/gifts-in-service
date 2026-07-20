@@ -3,15 +3,31 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 4
     groups:
-      production-dependencies: { dependency-type: production }
-      development-dependencies: { dependency-type: development }
+      production-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: production
+        patterns: ["*"]
+        update-types: [minor, patch]
+      development-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 3
   - package-ecosystem: terraform
     directory: /infra/environments/dev
     schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 2
   - package-ecosystem: terraform
     directory: /infra/bootstrap
     schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 2

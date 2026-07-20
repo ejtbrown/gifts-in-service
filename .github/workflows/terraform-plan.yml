@@ -2,11 +2,7 @@ name: Terraform plan
 
 on:
   pull_request:
-    paths:
-      - "infra/**"
-      - "services/**"
-      - "packages/**"
-      - "pnpm-lock.yaml"
+    branches: [dev]
 
 permissions:
   contents: read
@@ -14,6 +10,7 @@ permissions:
 
 jobs:
   plan:
+    name: dev-plan
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -55,18 +52,12 @@ jobs:
             -backend-config=region=${{ vars.AWS_REGION }} \
             -backend-config=kms_key_id=${{ vars.TF_STATE_KMS_KEY_ARN }}
           terraform -chdir=infra/environments/dev plan -refresh=false -lock=false -input=false -out=tfplan
-          terraform -chdir=infra/environments/dev show -json tfplan | jq '{changes: [.resource_changes[]? | {address, actions: .change.actions}]}' > plan-summary.json
+          terraform -chdir=infra/environments/dev show -json tfplan |
+            jq '{changes: [.resource_changes[]? | {address, actions: .change.actions}]}' \
+              > infra/environments/dev/plan-summary.json
           {
             echo '### Terraform dev plan (resource addresses/actions only)'
             echo '```json'
             cat infra/environments/dev/plan-summary.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: terraform-dev-plan-${{ github.event.pull_request.number }}
-          path: |
-            infra/environments/dev/tfplan
-            infra/environments/dev/plan-summary.json
-          retention-days: 3
-          if-no-files-found: error

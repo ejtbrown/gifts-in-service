@@ -18,11 +18,13 @@ Repositories created after July 15, 2026 require these IDs in their GitHub OIDC
 trust subject. Omit `github_repository_ids` only when CloudTrail confirms the
 repository still emits the legacy name-only subject.
 
-Record the state bucket, state KMS ARN, exact dev/prod deploy role ARNs, and read-only plan role ARN in protected GitHub Environment variables. The OIDC trust is restricted to the exact repository and `dev`, `prod`, or `dev-plan` environment; no long-lived AWS keys are used.
+Record the state bucket, state KMS ARN, exact dev/prod deploy role ARNs, and read-only dev plan role ARN in protected GitHub Environment variables. The OIDC trust is restricted to the exact repository and `dev`, `prod`, or `dev-plan` environment; no long-lived AWS keys are used.
 
 ## 2. Configure protected environments
 
-Require reviewers for `prod`. Set `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_STATE_KMS_KEY_ARN`, `CHURCH_DISPLAY_NAME`, `PRIVACY_CONTACT_EMAIL`, `HELP_CONTACT_EMAIL`, `SES_SENDER_EMAIL`, `SES_SENDER_DOMAIN`, and `BUDGET_ALERT_EMAIL` in both deploy environments. Optional values are `CUSTOM_DOMAIN_NAME` and `ROUTE53_ZONE_ID`. Configure `AWS_PLAN_ROLE_ARN` plus the non-secret dev values in the protected `dev-plan` environment.
+Allow only the protected `dev` branch to use the `dev` environment and only the protected `main` branch to use `prod`. The `dev` environment deploys without review. The `prod` environment requires the sole maintainer's approval with self-review allowed and administrator bypass disabled. Permit pull-request merge refs to use `dev-plan`.
+
+Set `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_STATE_KMS_KEY_ARN`, `CHURCH_DISPLAY_NAME`, `PRIVACY_CONTACT_EMAIL`, `HELP_CONTACT_EMAIL`, `SES_SENDER_EMAIL`, `SES_SENDER_DOMAIN`, and `BUDGET_ALERT_EMAIL` in both deploy environments. Optional values are `CUSTOM_DOMAIN_NAME` and `ROUTE53_ZONE_ID`. Configure `AWS_PLAN_ROLE_ARN` plus the non-secret dev values in the protected `dev-plan` environment.
 
 For a domain identity already managed outside this stack, set `SES_USE_DOMAIN_IDENTITY=true` and `SES_MANAGE_SENDER_IDENTITY=false`. The application then authorizes the exact `SES_SENDER_EMAIL` under that domain without importing, replacing, or changing the existing SES identity. Leave `SES_MANAGE_SENDER_IDENTITY=true` when this stack should create and own the identity.
 
@@ -40,7 +42,7 @@ pnpm build && pnpm build:lambdas
 pnpm infra:validate
 ```
 
-Use the manual Deploy workflow. It assumes the environment-specific OIDC role, reruns checks, fails closed on production preflight, applies Terraform with an encrypted native-lockfile backend, invokes the migration Lambda, syncs the web build to private S3 with KMS encryption, and invalidates CloudFront.
+Merge changes through `dev`. The CI workflow tests the commit and packages its frontend and Lambda artifacts, then automatically deploys a successful `dev` push. Promote `dev` to `main` with a pull request. After the `main` push passes the same application and Terraform jobs, approve the waiting `prod` environment deployment. The deployment consumes the artifacts built by that successful run, assumes the environment-specific OIDC role, fails closed on production preflight, applies an explicit Terraform plan with the encrypted native-lockfile backend, invokes the migration Lambda, syncs the web build to private S3 with KMS encryption, and invalidates CloudFront.
 
 The deployment preflight reads `infra/database-release.json`, requires at least one year of remaining standard support, and verifies through the regional RDS API that the selected Aurora PostgreSQL engine reports `available`. Aurora 17.7 is deliberately pinned as an LTS release; automatic minor upgrades are disabled so AWS does not move the cluster away from that LTS line without a reviewed configuration change.
 
