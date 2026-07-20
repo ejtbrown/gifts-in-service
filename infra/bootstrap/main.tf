@@ -229,6 +229,7 @@ resource "aws_iam_role_policy" "plan_state_access" {
 data "aws_iam_policy_document" "plan_data_sources" {
   statement {
     actions = [
+      "cloudfront:GetCachePolicy",
       "cloudfront:ListCachePolicies",
       "ec2:DescribeAvailabilityZones",
     ]
