@@ -1,0 +1,12 @@
+name: Security concern
+description: Redirect sensitive vulnerabilities to private reporting.
+body:
+  - type: markdown
+    attributes:
+      value: Do not disclose an exploitable vulnerability, token, credential, personal data, or production detail in a public issue. Use GitHub private vulnerability reporting or the church's configured security contact. Use this form only for non-sensitive hardening suggestions.
+  - type: textarea
+    id: hardening
+    attributes:
+      label: Non-sensitive hardening suggestion
+    validations:
+      required: true

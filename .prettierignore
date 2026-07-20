@@ -1,0 +1,8 @@
+dist
+coverage
+.terraform
+playwright-report
+test-results
+pnpm-lock.yaml
+*.tfvars
+gifts-in-service-codex-prompt.md

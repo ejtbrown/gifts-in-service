@@ -1,0 +1,126 @@
+review_scope:
+  environment: prod
+  region: us-east-1
+  source: Terraform configuration; no live AWS discovery performed
+  terraform_entrypoints:
+    - infra/bootstrap
+    - infra/environments/dev
+    - infra/environments/prod
+
+deployment:
+  model: serverless web application
+  runtime: Node.js 24 on arm64 AWS Lambda
+  build: pnpm TypeScript workspace with React and Vite
+  delivery: GitHub Actions using AWS OIDC roles
+
+components:
+  frontend:
+    resources:
+      - one private, versioned, SSE-KMS S3 bucket
+      - one CloudFront distribution using PriceClass_100
+      - one CloudFront-scoped AWS WAF web ACL
+      - five WAF rules: one AWS managed rule group and four rate rules
+    always_on_billing:
+      - WAF web ACL and rules
+  api:
+    resources:
+      - one API Gateway HTTP API and default stage
+      - two API Lambda integrations: public/member and staff
+    scaling:
+      - Lambda reserved concurrency caps of 20 public and 10 staff
+      - no provisioned concurrency
+  workers:
+    resources:
+      - lifecycle Lambda invoked by one daily EventBridge Scheduler schedule
+      - email-events Lambda driven by SQS
+      - re-embedding Lambda driven by SQS
+      - migration Lambda invoked only for deployment operations
+      - two work queues and two dead-letter queues
+      - two SNS topics for SES events and alarms
+    scaling:
+      - Lambda reserved concurrency of 2 per background function
+      - no always-running worker
+  database:
+    resources:
+      - one Aurora PostgreSQL 17.7 LTS Serverless v2 cluster
+      - one db.serverless writer instance
+      - RDS Data API
+      - pgvector, full-text, and trigram indexes
+    scaling:
+      min_acu: 0
+      max_acu: 2
+      auto_pause_seconds: 300
+    storage_profile:
+      production_backup_retention_days: 35
+      expected_rows_in_requested_scenario: 500 volunteer profiles plus auth and audit rows
+    always_on_billing:
+      - cluster storage and backup storage beyond the included allowance
+      - ACU capacity only while resumed
+  identity:
+    resources:
+      - one Cognito user pool, app client, hosted domain, and five groups
+      - mandatory TOTP MFA and enforced threat protection, which implies the Plus tier for a newly created pool
+    scaling:
+      - monthly-active-user pricing
+  ai:
+    resources:
+      - Amazon Nova 2 Lite for interview, drafting, search planning, and reranking
+      - Amazon Titan Text Embeddings v2 at 1,024 dimensions
+      - one Bedrock guardrail and immutable guardrail version
+    scaling:
+      - on-demand token, embedding-token, and guardrail text-unit charges
+  email:
+    resources:
+      - one SES identity and configuration set
+      - SES-to-SNS-to-SQS delivery feedback path
+    scaling:
+      - per-message SES, SNS, SQS, Lambda, and KMS requests
+  networking:
+    resources:
+      - one VPC
+      - two isolated database subnets and one isolated route table
+      - one Aurora security group
+    absent_fixed_cost_resources:
+      - NAT gateway
+      - internet gateway
+      - load balancer
+      - VPC endpoint
+      - public IPv4 address
+  security_and_secrets:
+    resources:
+      - one application KMS key for the prod stack
+      - one shared bootstrap/state KMS key
+      - four expected prod Secrets Manager secrets: RDS master, database application, database migration, and application security keys
+      - one encrypted and versioned Terraform-state S3 bucket
+    always_on_billing:
+      - two customer-managed KMS keys when bootstrap is allocated to this system
+      - four stored secrets
+  observability:
+    resources:
+      - six KMS-encrypted Lambda log groups retained for 90 days
+      - one custom CloudWatch dashboard
+      - 21 standard metric alarms
+      - Embedded Metric Format application metrics
+      - one monthly AWS Budget
+    always_on_billing:
+      - dashboard
+      - alarms
+      - any active custom metric identities
+
+data_stores:
+  primary: Aurora PostgreSQL with pgvector
+  static_assets: S3
+  terraform_state: S3
+  queues: SQS
+  secrets: Secrets Manager
+
+fixed_cost_candidates:
+  - AWS WAF web ACL and five rules
+  - CloudWatch dashboard and 21 alarms
+  - two customer-managed KMS keys
+  - four Secrets Manager secrets
+
+scale_to_zero_observations:
+  - API, compute, queues, scheduler, CloudFront, S3 requests, SES, and Bedrock are usage-based.
+  - Aurora compute reaches zero ACU after five idle minutes, but storage remains billable.
+  - WAF, CloudWatch dashboard/alarms, KMS keys, and stored secrets establish a non-zero monthly floor.

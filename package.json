@@ -1,0 +1,50 @@
+{
+  "name": "gifts-in-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Privacy-minded volunteer skills discovery for churches",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.13.1",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green 'pnpm --filter @gis/public-api dev' 'pnpm --filter @gis/web dev'",
+    "build": "pnpm -r --if-present build",
+    "build:lambdas": "tsx scripts/package-lambdas.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "pnpm -r --if-present typecheck && tsc -p tsconfig.tests.json --noEmit",
+    "test": "vitest run --project unit",
+    "test:integration": "bash -c 'set -a; source .env.example; set +a; pnpm db:migrate && pnpm db:seed && vitest run --project integration'",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
+    "eval:ai": "vitest run --project ai-eval",
+    "db:migrate": "tsx services/migration-runner/src/cli.ts migrate",
+    "db:seed": "tsx services/migration-runner/src/cli.ts seed",
+    "infra:fmt": "terraform fmt -check -recursive infra",
+    "infra:validate": "bash scripts/terraform-validate.sh",
+    "preflight": "tsx scripts/preflight.ts",
+    "audit:repo": "bash scripts/repository-safety-scan.sh",
+    "audit:dependencies": "pnpm audit --prod --audit-level high"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@eslint/js": "9.34.0",
+    "@playwright/test": "1.55.0",
+    "@types/node": "24.3.0",
+    "@typescript-eslint/eslint-plugin": "8.41.0",
+    "@typescript-eslint/parser": "8.41.0",
+    "concurrently": "9.2.1",
+    "esbuild": "0.28.1",
+    "eslint": "9.34.0",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.41.0",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,124 @@
+[
+  {
+    "id": "cost-p0-baseline-artifacts",
+    "priority": "P0",
+    "title": "Record a dated repository-grounded cost baseline",
+    "description": "Maintain the resource inventory, pricing model, scale-to-zero review, and rollout procedure alongside the infrastructure.",
+    "rationale": "A quantified baseline makes fixed-cost regressions and environment multipliers reviewable before deployment.",
+    "files_to_change": [
+      "inventory.yaml",
+      "cost_model.md",
+      "DESIGN_REVIEW_COST_SCALABILITY.md",
+      "RUNBOOK_ROLLOUT.md",
+      "docs/cost-and-scaling.md"
+    ],
+    "commands_to_run": [
+      "pnpm format:check",
+      "pnpm audit:repo",
+      "pnpm infra:validate"
+    ],
+    "acceptance_criteria": [
+      "The model names its region, price date, usage assumptions, fixed floor, variable cost, and account-wide free-tier caveats.",
+      "The inventory agrees with the current Terraform resources.",
+      "No estimate is represented as a live bill or applied Terraform plan."
+    ],
+    "rollback_notes": "Revert documentation only if it becomes inaccurate, replacing it in the same change with a newly dated model rather than deleting the cost baseline.",
+    "implementation_status": "completed"
+  },
+  {
+    "id": "cost-p0-cloudfront-free-plan-proof",
+    "priority": "P0",
+    "title": "Prove CloudFront flat-rate Free plan compatibility in dev",
+    "description": "After deployment, verify paid-account eligibility and test whether the existing CloudFront distribution, S3 origin, API origin, origin-verification header, and exactly five Terraform-managed WAF rules retain their behavior when associated with the $0/month plan.",
+    "rationale": "The plan can cover the current $10/month WAF floor, but Free has no uptime SLA and billing-plan ownership must not silently replace security controls.",
+    "files_to_change": [
+      "infra/modules/storage-edge/main.tf",
+      "docs/cost-and-scaling.md",
+      "RUNBOOK_ROLLOUT.md"
+    ],
+    "commands_to_run": [
+      "pnpm infra:fmt",
+      "pnpm infra:validate",
+      "terraform -chdir=infra/environments/dev plan -refresh=false"
+    ],
+    "acceptance_criteria": [
+      "The account is eligible for the Free plan and the distribution remains under 1 million allowed requests and 100 GB transfer per month.",
+      "All five existing WAF protections remain enabled with unchanged block/count behavior.",
+      "CloudFront still serves the private S3 origin and forwards API cookies, Origin, content type, and CSRF headers correctly.",
+      "Direct API Gateway access without the origin-verification header is still rejected.",
+      "The operator explicitly accepts that the Free plan has no uptime SLA.",
+      "A tested path returns the distribution to pay-as-you-go pricing."
+    ],
+    "rollback_notes": "Switch the dev distribution back to pay-as-you-go pricing, confirm the Terraform-managed WAF ACL is associated, rerun smoke tests, and do not attempt production enrollment if security behavior or Terraform ownership drifts.",
+    "implementation_status": "requires_account_decision"
+  },
+  {
+    "id": "cost-p0-ephemeral-dev-policy",
+    "priority": "P0",
+    "title": "Keep dev ephemeral instead of continuously deployed",
+    "description": "Define an explicit create-test-destroy workflow for dev while retaining encrypted remote state and reproducible deployment artifacts.",
+    "rationale": "A continuously deployed dev stack adds roughly $15/month, far more than the stated production workload adds.",
+    "files_to_change": [
+      ".github/workflows/deploy.yml",
+      "docs/runbooks/initial-deployment.md",
+      "docs/runbooks/decommission.md"
+    ],
+    "commands_to_run": [
+      "pnpm build:lambdas",
+      "pnpm infra:validate",
+      "terraform -chdir=infra/environments/dev plan -refresh=false"
+    ],
+    "acceptance_criteria": [
+      "Dev can be recreated from protected configuration without manual resource repair.",
+      "Destroy requires protected-environment approval and an explicit typed confirmation.",
+      "No real personal data or production backup depends on dev.",
+      "Remote state and state KMS resources are not destroyed with the dev application."
+    ],
+    "rollback_notes": "Redeploy dev from the last green commit using the protected dev environment and run migrations plus fictional-data smoke tests.",
+    "implementation_status": "planned"
+  },
+  {
+    "id": "cost-p1-budget-baseline",
+    "priority": "P1",
+    "title": "Tune the production budget to the measured baseline",
+    "description": "After one complete billing month, set the production monthly budget near $50 and add thresholds appropriate to the measured $16-$18 baseline.",
+    "rationale": "The current $300 threshold is too high to detect an unpaused database, accidental second environment, or inference abuse early.",
+    "files_to_change": [
+      "infra/environments/prod/main.tf",
+      "docs/cost-and-scaling.md"
+    ],
+    "commands_to_run": [
+      "pnpm infra:fmt",
+      "pnpm infra:validate",
+      "terraform -chdir=infra/environments/prod plan -refresh=false"
+    ],
+    "acceptance_criteria": [
+      "A clean full-month Cost Explorer or CUR baseline has been reviewed.",
+      "The threshold includes expected KMS rotation growth and intentional deployment events.",
+      "The alert recipient confirms receipt in production.",
+      "The budget remains notification-only unless a separately reviewed action is approved."
+    ],
+    "rollback_notes": "Restore the previous budget limit if alerts are noisy because this account includes unrelated workloads; do not disable billing visibility.",
+    "implementation_status": "awaiting_first_full_billing_month"
+  },
+  {
+    "id": "cost-p1-cardinality-guard",
+    "priority": "P1",
+    "title": "Guard against high-cardinality CloudWatch metrics",
+    "description": "Extend the repository safety scan to reject personal, request-derived, or otherwise unbounded EMF dimensions and require fixed operation names.",
+    "rationale": "CloudWatch charges each unique dimension combination as a metric; an unbounded dimension can make observability the fastest-growing variable cost.",
+    "files_to_change": [
+      "scripts/repository-safety-scan.sh",
+      "packages/shared/src/metrics.ts",
+      "tests/unit/domain.test.ts"
+    ],
+    "commands_to_run": ["pnpm audit:repo", "pnpm test", "pnpm typecheck"],
+    "acceptance_criteria": [
+      "Only Environment, Service, and Operation are emitted as dimensions.",
+      "Tests reject unsafe metric metadata such as an email-derived operation value.",
+      "Existing metrics and alarm names remain unchanged."
+    ],
+    "rollback_notes": "Revert the scan/test change if it blocks a legitimate bounded operation, but retain the fixed dimension schema and add the operation to an explicit allowlist instead.",
+    "implementation_status": "completed"
+  }
+]

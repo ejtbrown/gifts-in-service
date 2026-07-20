@@ -1,0 +1,5 @@
+{
+  "aurora_postgresql_version": "17.7",
+  "aurora_standard_support_end": "2030-02-28T00:00:00Z",
+  "local_postgresql_major": 17
+}

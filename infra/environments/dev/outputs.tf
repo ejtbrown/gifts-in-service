@@ -1,0 +1,14 @@
+output "cloudfront_url" { value = module.application.cloudfront_url }
+output "api_endpoint" { value = module.application.api_endpoint }
+output "cognito_user_pool_id" { value = module.application.cognito_user_pool_id }
+output "cognito_client_id" { value = module.application.cognito_client_id }
+output "ses_identity" { value = module.application.ses_identity }
+output "ses_configuration_set" { value = module.application.ses_configuration_set }
+output "rds_cluster_arn" { value = module.application.rds_cluster_arn }
+output "bedrock_guardrail_id" { value = module.application.bedrock_guardrail_id }
+output "bedrock_model_configuration" { value = module.application.bedrock_model_configuration }
+output "dashboard_name" { value = module.application.dashboard_name }
+output "custom_domain_ready" { value = module.application.custom_domain_ready }
+output "frontend_bucket" { value = module.application.frontend_bucket }
+output "distribution_id" { value = module.application.distribution_id }
+output "kms_key_arn" { value = module.application.kms_key_arn }

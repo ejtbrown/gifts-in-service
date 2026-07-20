@@ -1,0 +1,7 @@
+{{app_name}} secure link
+
+Open this secure link. It expires at {{expires_at}} and can be used once.
+
+{{magic_link}}
+
+If you did not request this, you can ignore this message. The email contains no profile details.

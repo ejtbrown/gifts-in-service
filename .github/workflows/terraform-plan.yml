@@ -1,0 +1,72 @@
+name: Terraform plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "services/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: dev-plan
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.13.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.3.0
+          cache: pnpm
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.14.3
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: pnpm install --frozen-lockfile && pnpm build:lambdas
+      - name: Plan from protected state without AWS refresh
+        env:
+          TF_IN_AUTOMATION: "true"
+          TF_VAR_church_display_name: ${{ vars.CHURCH_DISPLAY_NAME }}
+          TF_VAR_privacy_contact_email: ${{ vars.PRIVACY_CONTACT_EMAIL }}
+          TF_VAR_help_contact_email: ${{ vars.HELP_CONTACT_EMAIL }}
+          TF_VAR_ses_sender_email: ${{ vars.SES_SENDER_EMAIL }}
+          TF_VAR_ses_sender_domain: ${{ vars.SES_SENDER_DOMAIN }}
+          TF_VAR_ses_use_domain_identity: ${{ vars.SES_USE_DOMAIN_IDENTITY || 'false' }}
+          TF_VAR_ses_manage_sender_identity: ${{ vars.SES_MANAGE_SENDER_IDENTITY || 'true' }}
+          TF_VAR_budget_alert_email: ${{ vars.BUDGET_ALERT_EMAIL }}
+          TF_VAR_github_repository: ${{ github.repository }}
+        run: |
+          terraform -chdir=infra/environments/dev init -input=false \
+            -backend-config=bucket=${{ vars.TF_STATE_BUCKET }} \
+            -backend-config=key=dev/terraform.tfstate \
+            -backend-config=region=${{ vars.AWS_REGION }} \
+            -backend-config=kms_key_id=${{ vars.TF_STATE_KMS_KEY_ARN }}
+          terraform -chdir=infra/environments/dev plan -refresh=false -lock=false -input=false -out=tfplan
+          terraform -chdir=infra/environments/dev show -json tfplan | jq '{changes: [.resource_changes[]? | {address, actions: .change.actions}]}' > plan-summary.json
+          {
+            echo '### Terraform dev plan (resource addresses/actions only)'
+            echo '```json'
+            cat infra/environments/dev/plan-summary.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-dev-plan-${{ github.event.pull_request.number }}
+          path: |
+            infra/environments/dev/tfplan
+            infra/environments/dev/plan-summary.json
+          retention-days: 3
+          if-no-files-found: error

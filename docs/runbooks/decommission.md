@@ -1,0 +1,5 @@
+# Service decommissioning and final purge
+
+Obtain church/counsel authorization, stop new magic links/interviews/search, notify members through approved channels, and allow an export only if a separately reviewed purpose/authorization process exists—the MVP has no export feature. Purge all live people through the idempotent deletion path, verify no profiles/vectors/contacts/sessions/tokens remain, stop SES/Scheduler/queues, and preserve only authorized pseudonymous audit/purge evidence.
+
+Wait for the 35-day production backup window or use an approved cryptographic/resource destruction plan. Then run a reviewed Terraform destroy with deletion protection/final snapshot handling explicitly changed; delete final snapshots, secret recovery versions, log groups, web object versions, Cognito users, queues, and KMS keys only after retention approval. Terraform state is destroyed last and through its own bootstrap procedure. Record resource IDs/counts—not personal content—and verify DNS no longer points to the service.

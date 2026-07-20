@@ -1,0 +1,10 @@
+variable "prefix" { type = string }
+variable "tags" { type = map(string) }
+variable "kms_key_arn" { type = string }
+variable "lifecycle_function_arn" { type = string }
+variable "lifecycle_function_name" { type = string }
+variable "reembed_function_arn" { type = string }
+variable "email_events_function_arn" { type = string }
+variable "email_event_queue_arn" { type = string }
+variable "reembed_function_role_name" { type = string }
+variable "email_events_function_role_name" { type = string }

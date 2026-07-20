@@ -1,0 +1,19 @@
+{
+  "name": "@gis/reembed-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@gis/ai": "workspace:*",
+    "@gis/db": "workspace:*",
+    "@gis/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.153",
+    "typescript": "5.9.2"
+  }
+}

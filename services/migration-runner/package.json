@@ -1,0 +1,22 @@
+{
+  "name": "@gis/migration-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "3.1088.0",
+    "@gis/ai": "workspace:*",
+    "@gis/auth": "workspace:*",
+    "@gis/db": "workspace:*",
+    "@gis/shared": "workspace:*",
+    "dotenv": "17.2.2"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.153",
+    "typescript": "5.9.2"
+  }
+}

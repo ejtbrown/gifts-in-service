@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
+    environment:
+      POSTGRES_DB: gifts_in_service
+      POSTGRES_USER: gis
+      POSTGRES_PASSWORD: gis-local-only
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gis -d gifts_in_service"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - gis-postgres:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_DATA_FILE: /data/mailpit.db
+      MP_DISABLE_VERSION_CHECK: "true"
+    volumes:
+      - gis-mailpit:/data
+
+volumes:
+  gis-postgres:
+  gis-mailpit:

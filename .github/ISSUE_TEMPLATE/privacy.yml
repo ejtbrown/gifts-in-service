@@ -1,0 +1,18 @@
+name: Privacy concern
+description: Report a privacy behavior without including personal data.
+body:
+  - type: markdown
+    attributes:
+      value: Do not include names, email addresses, profiles, interview text, search queries, tokens, or credentials. For a sensitive report, use the church's configured private privacy channel instead of a public issue.
+  - type: textarea
+    id: concern
+    attributes:
+      label: Concern using fictional examples only
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Feature or route
+    validations:
+      required: true

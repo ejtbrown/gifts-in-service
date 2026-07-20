@@ -1,0 +1,12 @@
+church_display_name         = "Fictional Church Name — replace after review"
+privacy_contact_email       = "privacy@example.invalid"
+help_contact_email          = "help@example.invalid"
+ses_sender_email            = "no-reply@example.invalid"
+ses_sender_domain           = "example.invalid"
+ses_manage_sender_identity  = true
+budget_alert_email          = "cloud-owner@example.invalid"
+github_repository           = "owner/gifts-in-service"
+privacy_preflight_confirmed = false
+ses_production_ready        = false
+custom_domain_name          = ""
+route53_zone_id             = ""
