@@ -10,7 +10,7 @@
   "dependencies": {
     "@gis/db": "workspace:*",
     "@gis/shared": "workspace:*",
-    "zod": "4.1.10"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/aws-lambda": "8.10.153",
