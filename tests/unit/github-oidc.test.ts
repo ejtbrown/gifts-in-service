@@ -24,4 +24,13 @@ describe("GitHub OIDC bootstrap trust", () => {
       ),
     ).toHaveLength(2);
   });
+
+  it("allows Terraform to manage the CloudFront web ACL", async () => {
+    const main = await readFile(
+      resolve(repositoryRoot, "infra/bootstrap/main.tf"),
+      "utf8",
+    );
+
+    expect(main).toContain('"wafv2:*"');
+  });
 });

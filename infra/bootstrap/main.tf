@@ -151,7 +151,8 @@ data "aws_iam_policy_document" "deploy" {
       "cognito-idp:*", "ec2:*", "events:*", "iam:Get*", "iam:List*", "iam:CreateRole",
       "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
       "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PassRole", "kms:*", "lambda:*", "logs:*",
-      "rds:*", "route53:*", "s3:*", "scheduler:*", "secretsmanager:*", "ses:*", "sns:*", "sqs:*"
+      "rds:*", "route53:*", "s3:*", "scheduler:*", "secretsmanager:*", "ses:*", "sns:*", "sqs:*",
+      "wafv2:*"
     ]
     resources = ["*"]
   }
