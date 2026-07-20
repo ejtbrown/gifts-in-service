@@ -16,7 +16,7 @@
     "dotenv": "17.2.2"
   },
   "devDependencies": {
-    "@types/aws-lambda": "8.10.153",
+    "@types/aws-lambda": "8.10.162",
     "typescript": "5.9.2"
   }
 }
