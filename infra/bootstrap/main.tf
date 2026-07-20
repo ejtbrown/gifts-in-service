@@ -151,8 +151,17 @@ data "aws_iam_policy_document" "deploy" {
       "cognito-idp:*", "ec2:*", "events:*", "iam:Get*", "iam:List*", "iam:CreateRole",
       "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
       "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PassRole", "kms:*", "lambda:*", "logs:*",
-      "rds:*", "route53:*", "s3:*", "scheduler:*", "secretsmanager:*", "ses:*", "sns:*", "sqs:*",
-      "wafv2:*"
+      "rds:*", "route53:*", "scheduler:*", "secretsmanager:*", "ses:*", "sns:*", "sqs:*", "wafv2:*",
+      "s3:AbortMultipartUpload", "s3:CreateBucket", "s3:DeleteBucket", "s3:DeleteBucketPolicy",
+      "s3:DeleteObject", "s3:GetAccelerateConfiguration", "s3:GetBucketAcl", "s3:GetBucketCORS",
+      "s3:GetBucketLocation", "s3:GetBucketLogging", "s3:GetBucketObjectLockConfiguration",
+      "s3:GetBucketPolicy", "s3:GetBucketPublicAccessBlock", "s3:GetBucketRequestPayment",
+      "s3:GetBucketVersioning", "s3:GetBucketWebsite", "s3:GetEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration", "s3:GetObject", "s3:GetReplicationConfiguration",
+      "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:ListMultipartUploadParts",
+      "s3:ListTagsForResource", "s3:PutBucketPolicy", "s3:PutBucketPublicAccessBlock",
+      "s3:PutBucketVersioning", "s3:PutEncryptionConfiguration", "s3:PutLifecycleConfiguration",
+      "s3:PutObject", "s3:TagResource", "s3:UntagResource"
     ]
     resources = ["*"]
   }

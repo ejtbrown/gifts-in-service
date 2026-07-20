@@ -24,7 +24,7 @@ jobs:
           --health-cmd "pg_isready -U gis -d gifts_in_service"
           --health-interval 5s --health-timeout 5s --health-retries 12
       mailpit:
-        image: axllent/mailpit:v1.27.8@sha256:6abc8e635100b8b2995d37e71b4bb0b25c330a81a7f473f6aa08c322e392f1e0
+        image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
         ports: [1025:1025, 8025:8025]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

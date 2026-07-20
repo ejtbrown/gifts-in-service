@@ -33,4 +33,20 @@ describe("GitHub OIDC bootstrap trust", () => {
 
     expect(main).toContain('"wafv2:*"');
   });
+
+  it("grants only the S3 operations needed by Terraform and asset sync", async () => {
+    const main = await readFile(
+      resolve(repositoryRoot, "infra/bootstrap/main.tf"),
+      "utf8",
+    );
+    const deployPolicy = main.match(
+      /data "aws_iam_policy_document" "deploy" \{[\s\S]*?\n\}/u,
+    )?.[0];
+
+    expect(deployPolicy).toBeDefined();
+    expect(deployPolicy).not.toContain('"s3:*"');
+    expect(deployPolicy).toContain('"s3:ListBucket"');
+    expect(deployPolicy).toContain('"s3:PutObject"');
+    expect(deployPolicy).toContain('"s3:DeleteObject"');
+  });
 });
