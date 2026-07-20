@@ -1,0 +1,31 @@
+name: Promotion policy
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: promotion-source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require a reviewed promotion path
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "${HEAD_REPOSITORY}" != "${REPOSITORY}" ]]; then
+            echo "::error::Production pull requests must originate in this repository."
+            exit 1
+          fi
+          case "${HEAD_REF}" in
+            dev|hotfix/*|dependabot/*) ;;
+            *)
+              echo "::error::Production changes must come from dev, hotfix/*, or dependabot/*."
+              exit 1
+              ;;
+          esac
