@@ -225,3 +225,19 @@ resource "aws_iam_role_policy" "plan_state_access" {
   role   = aws_iam_role.github_plan.id
   policy = data.aws_iam_policy_document.plan_state_access.json
 }
+
+data "aws_iam_policy_document" "plan_data_sources" {
+  statement {
+    actions = [
+      "cloudfront:ListCachePolicies",
+      "ec2:DescribeAvailabilityZones",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_data_sources" {
+  name   = "terraform-plan-data-sources"
+  role   = aws_iam_role.github_plan.id
+  policy = data.aws_iam_policy_document.plan_data_sources.json
+}
