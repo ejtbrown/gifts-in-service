@@ -1,4 +1,4 @@
-# ADR 0002: Promote environment branches
+# ADR 0006: Promote environment branches
 
 ## Status
 
