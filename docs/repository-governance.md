@@ -6,4 +6,6 @@ Terraform dev plans run for same-repository pull requests targeting `dev` and us
 
 CI deploys successful pushes to `dev` automatically. Successful pushes to `main` wait for the sole maintainer's approval in the protected `prod` environment; self-review is intentionally allowed. Environment branch policies restrict `dev` deployments to `dev`, `prod` deployments to `main`, and plan credentials to pull-request merge refs. Update action pins by reviewing upstream release notes and the exact commit, then changing the SHA/comment together.
 
+Merge normal `dev` to `main` promotion pull requests with a merge commit, not squash or rebase, so `dev` remains an ancestor of `main`. Pull requests into `dev` may still be squashed.
+
 Enable GitHub secret scanning/push protection and private vulnerability reporting in repository settings. Dependabot covers npm, Actions and Terraform. Optional Codex review may be enabled through GitHub controls, but CI must never require an OpenAI API key.
