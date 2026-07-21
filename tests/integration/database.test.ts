@@ -67,6 +67,7 @@ describe("PostgreSQL invariants", () => {
     const pending = await repository.startPendingInterview({
       personId,
       openingMessage: "What fictional experience would you like to share?",
+      initialCompletenessConfidence: "LOW",
       now: startedAt,
     });
     expect(pending.revision).toBe(0);
@@ -89,6 +90,7 @@ describe("PostgreSQL invariants", () => {
         personId,
         expectedRevision: 0,
         messages,
+        completenessConfidence: "MODERATE",
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -98,6 +100,7 @@ describe("PostgreSQL invariants", () => {
         personId,
         expectedRevision: 0,
         messages,
+        completenessConfidence: "MODERATE",
         now: new Date("2026-07-16T13:01:00.000Z"),
       }),
     ).toBeNull();
@@ -107,6 +110,7 @@ describe("PostgreSQL invariants", () => {
     );
     expect(resumed?.messages).toEqual(messages);
     expect(resumed?.proposedProfile).toBe(exact);
+    expect(resumed?.completenessConfidence).toBe("MODERATE");
 
     expect(
       await repository.saveApprovedProfile({

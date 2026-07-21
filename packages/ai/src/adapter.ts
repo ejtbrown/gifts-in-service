@@ -1,7 +1,12 @@
-import type { InterviewMessage, RerankerOutput, SearchPlan } from "@gis/shared";
+import type {
+  InterviewCompleteness,
+  InterviewMessage,
+  RerankerOutput,
+  SearchPlan,
+} from "@gis/shared";
 
 export const PROMPT_VERSIONS = {
-  interviewer: "interviewer-2026-07-17.v2",
+  interviewer: "interviewer-2026-07-20.v3",
   profileDrafter: "profile-drafter-2026-07-15.v1",
   searchPlanner: "search-planner-2026-07-15.v1",
   searchReranker: "search-reranker-2026-07-19.v2",
@@ -16,6 +21,14 @@ export interface InterviewTurn {
   action: "CONTINUE" | "PROPOSE_PROFILE" | "SUBMIT_PROFILE";
   message: string;
   referenced_profile_text: string | null;
+  completeness_confidence: InterviewCompleteness;
+  coverage_gaps: string[];
+}
+
+export interface InterviewContext {
+  hasProposedProfile: boolean;
+  previousCompletenessConfidence: InterviewCompleteness;
+  currentProfile: string | null;
 }
 
 export interface RerankCandidate {
@@ -26,7 +39,7 @@ export interface RerankCandidate {
 export interface AiAdapter {
   interview(
     messages: readonly InterviewMessage[],
-    hasProposedProfile: boolean,
+    context: InterviewContext,
   ): Promise<InterviewTurn>;
   draft(
     messages: readonly InterviewMessage[],

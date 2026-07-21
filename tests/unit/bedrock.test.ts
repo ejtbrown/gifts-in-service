@@ -13,6 +13,11 @@ const config = {
   searchPlannerPrompt: "Plan the search.",
   searchRerankerPrompt: "Rerank the candidates.",
 };
+const interviewContext = {
+  hasProposedProfile: false,
+  previousCompletenessConfidence: "LOW" as const,
+  currentProfile: null,
+};
 
 describe("Bedrock conversation formatting", () => {
   it.each([
@@ -45,7 +50,7 @@ describe("Bedrock conversation formatting", () => {
               content: "Fictional content that the provider blocked.",
             },
           ],
-          false,
+          interviewContext,
         ),
       ).rejects.toMatchObject({
         name: "AiSafetyInterventionError",
@@ -69,6 +74,8 @@ describe("Bedrock conversation formatting", () => {
                     action: "CONTINUE",
                     message: "What else would you like to share?",
                     referenced_profile_text: null,
+                    completeness_confidence: "MODERATE",
+                    coverage_gaps: ["frequency or practical limits"],
                   },
                 },
               },
@@ -85,11 +92,12 @@ describe("Bedrock conversation formatting", () => {
         { role: "assistant", content: "What skills would you like to share?" },
         { role: "user", content: "I organize community events." },
       ],
-      false,
+      interviewContext,
     );
 
     expect(turn.action).toBe("CONTINUE");
     expect(turn.message).toBe("What else would you like to share?");
+    expect(turn.completeness_confidence).toBe("MODERATE");
     const systemPrompt = (
       capturedCommand as {
         input?: { system?: { text?: string }[] };
@@ -97,6 +105,9 @@ describe("Bedrock conversation formatting", () => {
     ).input?.system?.[0]?.text;
     expect(systemPrompt).toContain(
       "does not yet have an exact proposed profile",
+    );
+    expect(systemPrompt).toContain(
+      "Previously recorded completeness confidence: LOW",
     );
     expect(capturedCommand).toMatchObject({
       input: {
@@ -138,6 +149,8 @@ describe("Bedrock conversation formatting", () => {
                     action: "SUBMIT_PROFILE",
                     message: "I will submit that profile.",
                     referenced_profile_text: exact,
+                    completeness_confidence: "HIGH",
+                    coverage_gaps: [],
                   },
                 },
               },
@@ -156,13 +169,15 @@ describe("Bedrock conversation formatting", () => {
         },
         { role: "user", content: "That looks good; please submit it." },
       ],
-      false,
+      interviewContext,
     );
 
     expect(turn).toEqual({
       action: "SUBMIT_PROFILE",
       message: "I will submit that profile.",
       referenced_profile_text: exact,
+      completeness_confidence: "HIGH",
+      coverage_gaps: [],
     });
   });
 
@@ -179,6 +194,8 @@ describe("Bedrock conversation formatting", () => {
                     action: "PROPOSE_PROFILE",
                     message: "",
                     referenced_profile_text: "",
+                    completeness_confidence: "LOW",
+                    coverage_gaps: ["the kind of help they would consider"],
                   },
                 },
               },
@@ -195,12 +212,14 @@ describe("Bedrock conversation formatting", () => {
           { role: "assistant", content: "What should staff know?" },
           { role: "user", content: "Please prepare a proposed profile." },
         ],
-        false,
+        interviewContext,
       ),
     ).resolves.toEqual({
       action: "PROPOSE_PROFILE",
       message: "",
       referenced_profile_text: null,
+      completeness_confidence: "LOW",
+      coverage_gaps: ["the kind of help they would consider"],
     });
   });
 

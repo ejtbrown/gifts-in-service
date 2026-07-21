@@ -6,6 +6,7 @@ import {
   type Message,
 } from "@aws-sdk/client-bedrock-runtime";
 import {
+  interviewCompletenessSchema,
   interviewMessageSchema,
   rerankerOutputSchema,
   searchPlanSchema,
@@ -17,6 +18,7 @@ import { z } from "zod";
 import { emitMetric } from "@gis/shared";
 import type {
   AiAdapter,
+  InterviewContext,
   InterviewTurn,
   ProfileDraft,
   RerankCandidate,
@@ -39,6 +41,11 @@ const interviewTurnSchema = z
         z.string().trim().min(50).max(6000).nullable().optional(),
       )
       .transform((value) => value ?? null),
+    completeness_confidence: interviewCompletenessSchema,
+    coverage_gaps: z
+      .array(z.string().trim().min(1).max(120))
+      .max(6)
+      .default([]),
   })
   .superRefine((turn, context) => {
     if (turn.action === "CONTINUE" && turn.message.length === 0) {
@@ -189,7 +196,7 @@ export class BedrockAiAdapter implements AiAdapter {
 
   async interview(
     messages: readonly InterviewMessage[],
-    hasProposedProfile: boolean,
+    context: InterviewContext,
   ): Promise<InterviewTurn> {
     const started = Date.now();
     try {
@@ -201,9 +208,18 @@ export class BedrockAiAdapter implements AiAdapter {
               text: `${this.#config.interviewerPrompt}
 
 Runtime proposal state: ${
-                hasProposedProfile
+                context.hasProposedProfile
                   ? "The application has an exact proposed profile available."
                   : "The application does not yet have an exact proposed profile available."
+              }
+
+Previously recorded completeness confidence: ${context.previousCompletenessConfidence}.
+Reassess confidence from the full conversation on every turn. The prior value is continuity context, not a floor; lower it when a correction or a newly introduced vague skill creates a material gap.
+
+Current approved profile state: ${
+                context.currentProfile
+                  ? "The member is updating an existing approved profile. Treat the existing profile as established coverage, while probing vague additions or changes in the active conversation."
+                  : "The member is creating a first profile."
               }`,
             },
           ],
@@ -237,11 +253,22 @@ Runtime proposal state: ${
                         referenced_profile_text: {
                           anyOf: [{ type: "string" }, { type: "null" }],
                         },
+                        completeness_confidence: {
+                          type: "string",
+                          enum: ["LOW", "MODERATE", "HIGH"],
+                        },
+                        coverage_gaps: {
+                          type: "array",
+                          items: { type: "string", maxLength: 120 },
+                          maxItems: 6,
+                        },
                       },
                       required: [
                         "action",
                         "message",
                         "referenced_profile_text",
+                        "completeness_confidence",
+                        "coverage_gaps",
                       ],
                     },
                   },

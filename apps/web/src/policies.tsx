@@ -95,19 +95,24 @@ export function AiUseContent({
     <>
       <p>
         AI asks adaptive questions and prepares a draft from what you say. You
-        see the entire proposed profile and nothing is saved until you select{" "}
-        <strong>Approve and Save</strong> or <strong>Submit profile</strong>, or
-        clearly ask the assistant to submit that proposal. The exact approved
-        text—not a hidden list of inferred skills—is the authoritative record.
+        may answer one piece at a time. The assistant uses a temporary broad
+        completeness level to decide when to ask follow-up questions and when to
+        offer to wrap up; it is not a suitability score or a staff-search field.
+        You see the entire proposed profile and nothing is saved until you
+        select <strong>Approve and Save</strong> or{" "}
+        <strong>Submit profile</strong>, or clearly ask the assistant to submit
+        that proposal. The exact approved text—not a hidden list of inferred
+        skills—is the authoritative record.
       </p>
       <Heading>What is kept temporarily</Heading>
       <p>
-        Unfinished interview questions and answers are saved in the encrypted
-        application database for up to 30 days so you can return after closing
-        the page or requesting a new magic link. They are deleted when you
-        approve and save the profile or when the 30-day period ends. They are
-        not searchable by staff. The system does not use Bedrock Agents,
-        Knowledge Bases, or stateful model sessions.
+        Unfinished interview questions and answers, the latest proposal, and the
+        broad completeness level are saved in the encrypted application database
+        for up to 30 days so you can return after closing the page or requesting
+        a new magic link. They are deleted when you approve and save the profile
+        or when the 30-day period ends. They are not searchable by staff. The
+        system does not use Bedrock Agents, Knowledge Bases, or stateful model
+        sessions.
       </p>
       <Heading>Search</Heading>
       <p>

@@ -107,7 +107,7 @@ import {
 const NEUTRAL_MAGIC_RESPONSE =
   "If the address can receive a Gifts in Service link, an email has been sent.";
 const NEW_PROFILE_OPENING =
-  "What work, practical abilities, hobbies, or earlier volunteer experience would you be comfortable sharing?";
+  "We can take this one piece at a time. What work, practical ability, hobby, or earlier volunteer experience would you like to start with?";
 const UPDATE_PROFILE_OPENING =
   "Your current profile is shown above. What has changed, what would you like to add, or what would you like removed?";
 const STAFF_PASSWORD_RESET_RESPONSE =
@@ -837,11 +837,13 @@ export async function buildApp(
       openingMessage: person.approvedText
         ? UPDATE_PROFILE_OPENING
         : NEW_PROFILE_OPENING,
+      initialCompletenessConfidence: person.approvedText ? "MODERATE" : "LOW",
       now: now(),
     });
     return {
       messages: pending.messages,
       proposedProfile: pending.proposedProfile,
+      completenessConfidence: pending.completenessConfidence,
       revision: pending.revision,
       currentProfile: person.approvedText,
       startedAt: pending.startedAt,
@@ -879,10 +881,12 @@ export async function buildApp(
         ...pending.messages,
         { role: "user" as const, content: body.response },
       ];
-      const turn = await ai.interview(
-        messages,
-        pending.proposedProfile !== null,
-      );
+      const person = await repository.getPerson(session.personId);
+      const turn = await ai.interview(messages, {
+        hasProposedProfile: pending.proposedProfile !== null,
+        previousCompletenessConfidence: pending.completenessConfidence,
+        currentProfile: person?.approvedText ?? null,
+      });
       if (turn.action === "SUBMIT_PROFILE") {
         const exactProfile =
           pending.proposedProfile ??
@@ -917,7 +921,6 @@ export async function buildApp(
         turn.action === "PROPOSE_PROFILE" ||
         turn.action === "SUBMIT_PROFILE"
       ) {
-        const person = await repository.getPerson(session.personId);
         const draft = await ai.draft(
           messages,
           person?.approvedText ?? undefined,
@@ -937,6 +940,7 @@ export async function buildApp(
           ...messages,
           { role: "assistant" as const, content: message },
         ],
+        completenessConfidence: turn.completeness_confidence,
         ...(proposedProfile !== pending.proposedProfile && proposedProfile
           ? { proposedProfile }
           : {}),
@@ -952,6 +956,7 @@ export async function buildApp(
         message,
         revision,
         proposedProfile,
+        completenessConfidence: turn.completeness_confidence,
         expiresAt: pending.expiresAt,
         promptVersion: PROMPT_VERSIONS.interviewer,
       };

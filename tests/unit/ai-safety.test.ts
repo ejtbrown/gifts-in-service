@@ -11,7 +11,11 @@ describe("AI safety boundaries", () => {
     const ai = new FakeAiAdapter();
     const response = await ai.interview(
       [{ role: "user", content: "My password is NeverPutThisInAProfile" }],
-      false,
+      {
+        hasProposedProfile: false,
+        previousCompletenessConfidence: "LOW",
+        currentProfile: null,
+      },
     );
     expect(response.message).toBe(SENSITIVE_INFORMATION_REJECTION_MESSAGE);
     expect(response.message).not.toContain("NeverPutThisInAProfile");

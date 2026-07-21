@@ -8,7 +8,7 @@ This is a repository-derived estimate, not an AWS bill or Pricing Calculator exp
 
 - 500 approved volunteer profiles in Aurora PostgreSQL.
 - 30 volunteer add/update journeys per month.
-- Each journey has five interview turns, one draft call, one Titan embedding, one magic-link email, and about 15 minutes between its first and final database activity.
+- Each journey typically has eight adaptive interview turns (with a practical range of 5–12), one draft call, one Titan embedding, one magic-link email, and about 15 minutes between its first and final database activity.
 - 60 staff searches per month, distributed as isolated search events.
 - Each search has one Nova planning call, one Titan embedding, one Nova reranking call over up to 10 candidates, and one five-minute Aurora wake window.
 - Three distinct staff accounts are monthly active users. Cognito cost changes by about $0.02 for each distinct staff MAU, not for each search.
@@ -69,25 +69,25 @@ Both customer-managed keys have automatic rotation enabled. AWS charges another 
 Nova workload:
 
 ```text
-Volunteer input  = 30 × 7,000 tokens = 210,000
-Volunteer output = 30 × 1,000 tokens = 30,000
+Volunteer input  = 30 × 14,000 tokens = 420,000
+Volunteer output = 30 × 1,600 tokens = 48,000
 Search input     = 60 × 3,200 tokens = 192,000
 Search output    = 60 × 550 tokens = 33,000
 
-Nova = 402,000 / 1,000,000 × $0.30
-     + 63,000 / 1,000,000 × $2.50
-     = $0.28/month
+Nova = 612,000 / 1,000,000 × $0.30
+     + 81,000 / 1,000,000 × $2.50
+     = $0.39/month
 ```
 
 Guardrail workload:
 
 ```text
-Guardrail = (30 × 20 text units + 60 × 12 text units)
+Guardrail = (30 × 36 text units + 60 × 12 text units)
           / 1,000 × $0.10
-          = $0.13/month
+          = $0.18/month
 ```
 
-Titan embeddings are under $0.001/month at this volume. Estimated AI total: **$0.41/month**, with a practical range of roughly **$0.25–$0.90** depending on interview length, generated output, candidate prose length, and retry rate.
+Titan embeddings are under $0.001/month at this volume. Estimated AI total: **$0.57/month**, with a practical range of roughly **$0.30–$1.20** depending on interview length, generated output, candidate prose length, and retry rate.
 
 ### Aurora compute added by user activity
 
@@ -111,17 +111,17 @@ This is deliberately conservative for isolated searches. Searches clustered with
 
 ### Monthly total at the requested workload
 
-| View                                                                |    Idle floor | Incremental workload |                 Total |
-| ------------------------------------------------------------------- | ------------: | -------------------: | --------------------: |
-| Likely bill, first-year keys and available account free allocations |        $14.90 |                $1.25 |      **$16.15/month** |
-| Planning range                                                      | $14.75–$15.25 |          $1.25–$3.00 |     **$16–$18/month** |
-| List price with no CloudWatch/Lambda/API free allocations           |        $18.92 |           about $1.9 | **about $20.8/month** |
+| View                                                                |    Idle floor | Incremental workload |                   Total |
+| ------------------------------------------------------------------- | ------------: | -------------------: | ----------------------: |
+| Likely bill, first-year keys and available account free allocations |        $14.90 |                $1.41 |        **$16.31/month** |
+| Planning range                                                      | $14.75–$15.25 |          $1.40–$3.50 | **about $16–$19/month** |
+| List price with no CloudWatch/Lambda/API free allocations           |        $18.92 |           about $2.1 |   **about $21.0/month** |
 
 This workload is light rather than sustained load: it averages one volunteer journey per day and two searches per day.
 
 ## Marginal cost formulas
 
-- One typical volunteer add/update journey: approximately **$0.02–$0.04**, dominated by its Aurora active window and Nova/guardrail calls.
+- One typical volunteer add/update journey: approximately **$0.025–$0.05**, dominated by its Aurora active window and Nova/guardrail calls.
 - One isolated staff search: approximately **$0.009–$0.018**, dominated by reranking and the five-minute Aurora window. Cognito is per distinct staff MAU, not per search.
 - 1,000 ordinary non-AI API requests at 1 GiB and 250 ms average duration: about **$0.005** list price before database work, data transfer, logging, and free allocations.
 - Every additional distinct staff MAU: approximately **$0.02/month** on the Cognito Plus tier implied by the currently enforced threat-protection mode.
