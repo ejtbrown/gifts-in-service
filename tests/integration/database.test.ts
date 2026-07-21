@@ -90,7 +90,8 @@ describe("PostgreSQL invariants", () => {
         personId,
         expectedRevision: 0,
         messages,
-        completenessConfidence: "MODERATE",
+        completenessConfidence: "LOW",
+        followUpNotes: ["computer experience still needs follow-up"],
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -101,6 +102,7 @@ describe("PostgreSQL invariants", () => {
         expectedRevision: 0,
         messages,
         completenessConfidence: "MODERATE",
+        followUpNotes: [],
         now: new Date("2026-07-16T13:01:00.000Z"),
       }),
     ).toBeNull();
@@ -110,7 +112,10 @@ describe("PostgreSQL invariants", () => {
     );
     expect(resumed?.messages).toEqual(messages);
     expect(resumed?.proposedProfile).toBe(exact);
-    expect(resumed?.completenessConfidence).toBe("MODERATE");
+    expect(resumed?.completenessConfidence).toBe("LOW");
+    expect(resumed?.followUpNotes).toEqual([
+      "computer experience still needs follow-up",
+    ]);
 
     expect(
       await repository.saveApprovedProfile({

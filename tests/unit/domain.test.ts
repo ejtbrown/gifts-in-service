@@ -5,6 +5,7 @@ import {
   relevanceWithProfileLimitations,
   rerankerOutputSchema,
   SEARCH_RESULT_LIMIT,
+  containsForbiddenLogField,
   emitMetric,
   lifecycleActionsDue,
   lifecycleDates,
@@ -186,6 +187,15 @@ describe("grounded hybrid search", () => {
 });
 
 describe("sanitized logging", () => {
+  it("classifies interview follow-up notes as forbidden log fields", () => {
+    expect(
+      containsForbiddenLogField({ followUpNotes: ["unfinished thread"] }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({ follow_up_notes: ["unfinished thread"] }),
+    ).toBe(true);
+  });
+
   it("drops bodies, queries, tokens, email, and raw IP fields", () => {
     const result = sanitizedLog({
       correlationId: "corr",

@@ -737,6 +737,57 @@ describe("public/member API security flow", () => {
     );
     expect(proposal.message).toContain(proposal.proposedProfile);
 
+    const addedAfterProposal = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response:
+          "I also maintained computer networks and servers and could offer occasional troubleshooting advice.",
+        revision: proposal.revision,
+      },
+    });
+    expect(addedAfterProposal.statusCode).toBe(200);
+    const addition = addedAfterProposal.json<{
+      saved: false;
+      deletionRequested: false;
+      revision: number;
+      proposedProfile: null;
+    }>();
+    expect(addition.proposedProfile).toBeNull();
+    expect(addition.deletionRequested).toBe(false);
+    expect(
+      (await repository.getPendingInterview(personId, new Date()))
+        ?.proposedProfile,
+    ).toBeNull();
+
+    const reproposed = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response: "Please prepare the updated proposed profile now.",
+        revision: addition.revision,
+      },
+    });
+    expect(reproposed.statusCode).toBe(200);
+    const updatedProposal = reproposed.json<{
+      saved: false;
+      revision: number;
+      proposedProfile: string;
+    }>();
+    expect(updatedProposal.proposedProfile).toContain(
+      "maintained computer networks and servers",
+    );
+
     const semanticSubmission = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
@@ -747,7 +798,7 @@ describe("public/member API security flow", () => {
       },
       payload: {
         response: "That looks good. Please submit it.",
-        revision: proposal.revision,
+        revision: updatedProposal.revision,
       },
     });
     expect(semanticSubmission.statusCode).toBe(200);
@@ -756,8 +807,38 @@ describe("public/member API security flow", () => {
       await repository.getPendingInterview(personId, new Date()),
     ).toBeNull();
     expect((await repository.getPerson(personId))?.approvedText).toBe(
-      proposal.proposedProfile,
+      updatedProposal.proposedProfile,
     );
+
+    const deletionInterview = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/start",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {},
+    });
+    const deletionStart = deletionInterview.json<{ revision: number }>();
+    const deletionRequest = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response: "Please delete my entire profile.",
+        revision: deletionStart.revision,
+      },
+    });
+    expect(deletionRequest.statusCode).toBe(200);
+    expect(deletionRequest.json()).toMatchObject({
+      saved: false,
+      deletionRequested: true,
+    });
 
     const deleted = await app.inject({
       method: "DELETE",

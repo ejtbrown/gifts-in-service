@@ -45,10 +45,61 @@ const BOUNDARY =
   /\b(?:only|prefer|rather|not|no |avoid|unable|cannot|can't|won't|limit|boundary|boundaries|decline)\b/iu;
 const CONCRETE_CONTEXT =
   /\b(?:wordpress|react|accessibility|software|equipment|tools?|commercial|residential|kitchen|classroom|school|office|nonprofit|church|events?|accounting|bookkeeping|hvac|refrigeration|woodworking|sewing|gardening|photography|audio|video)\b/iu;
+const COMPUTER_TOPIC = /\b(?:computers?|computer systems?|technology)\b/iu;
+const COMPUTER_DETAIL =
+  /\b(?:computer hardware|software|networks?|servers?|programming|coding|databases?|desktop support|technical support|system administration|cybersecurity|websites?|wordpress|react)\b/iu;
+const ELECTRONICS_TOPIC = /\b(?:electronics?|electronic equipment)\b/iu;
+const ELECTRONICS_DETAIL =
+  /\b(?:circuits?|circuit boards?|solder(?:ing|ed)?|components?|radios?|test equipment|oscilloscopes?|electronics? repair)\b/iu;
+const PROFILE_DELETION_REQUEST =
+  /\b(?:delete|erase|permanently remove)\s+(?:(?:my|this|the)\s+)?(?:(?:entire|whole)\s+)?(?:gifts in service\s+)?(?:profile|account)\b|\bremove\s+(?:(?:my|this|the)\s+)?(?:(?:entire|whole)\s+)?(?:gifts in service\s+)?(?:profile|account)(?:\s+(?:entirely|completely|permanently))?\b/iu;
+
+function latestExchange(messages: readonly InterviewMessage[]): {
+  question: string;
+  answer: string;
+} {
+  const answerIndex = messages.findLastIndex(
+    (message) => message.role === "user",
+  );
+  if (answerIndex < 0) return { question: "", answer: "" };
+  const question = [...messages.slice(0, answerIndex)]
+    .reverse()
+    .find((message) => message.role === "assistant")?.content;
+  return { question: question ?? "", answer: messages[answerIndex]!.content };
+}
+
+function explicitlyDeclines(answer: string, topic: RegExp): boolean {
+  return (
+    topic.test(answer) &&
+    /\b(?:not relevant|nothing to add|do not want to discuss|rather not discuss|skip|no longer applies)\b/iu.test(
+      answer,
+    )
+  );
+}
+
+function questionOmissionNotes(
+  messages: readonly InterviewMessage[],
+): string[] {
+  const { question, answer } = latestExchange(messages);
+  const asksAboutComputers = COMPUTER_TOPIC.test(question);
+  const asksAboutElectronics = ELECTRONICS_TOPIC.test(question);
+  if (!asksAboutComputers || !asksAboutElectronics) return [];
+  return [
+    ...(!COMPUTER_DETAIL.test(answer) &&
+    !explicitlyDeclines(answer, COMPUTER_TOPIC)
+      ? ["computer experience introduced earlier still needs follow-up"]
+      : []),
+    ...(!ELECTRONICS_DETAIL.test(answer) &&
+    !explicitlyDeclines(answer, ELECTRONICS_TOPIC)
+      ? ["electronics experience introduced earlier still needs follow-up"]
+      : []),
+  ];
+}
 
 function assessCoverage(
   messages: readonly InterviewMessage[],
   currentProfile: string | null,
+  previousFollowUpNotes: readonly string[],
 ): InterviewCoverage {
   const answers = userMessages(messages);
   const supplied = answers.join(" ");
@@ -65,14 +116,44 @@ function assessCoverage(
   const hasCadence = CADENCE.test(source);
   const hasBoundary = BOUNDARY.test(source);
   const hasCadenceOrBoundary = hasCadence || hasBoundary;
+  const { answer: latestAnswer } = latestExchange(messages);
+  const retainedNotes = previousFollowUpNotes.filter((note) => {
+    const normalized = note.toLocaleLowerCase("en-US");
+    if (normalized.includes("computer"))
+      return (
+        !COMPUTER_DETAIL.test(latestAnswer) &&
+        !explicitlyDeclines(latestAnswer, COMPUTER_TOPIC)
+      );
+    if (normalized.includes("electronic"))
+      return (
+        !ELECTRONICS_DETAIL.test(latestAnswer) &&
+        !explicitlyDeclines(latestAnswer, ELECTRONICS_TOPIC)
+      );
+    if (normalized.includes("kind of help")) return !hasContribution;
+    if (normalized.includes("frequency") || normalized.includes("limit"))
+      return !hasCadenceOrBoundary;
+    if (normalized.includes("context") || normalized.includes("specific"))
+      return !hasContext;
+    if (normalized.includes("skill") || normalized.includes("experience area"))
+      return !hasDomain;
+    return true;
+  });
   const gaps = [
-    ...(!hasDomain ? ["a concrete skill or experience area"] : []),
-    ...(!hasContext ? ["specific context or experience"] : []),
-    ...(!hasContribution ? ["the kind of help they would consider"] : []),
-    ...(!hasCadenceOrBoundary ? ["frequency or practical limits"] : []),
-  ];
+    ...new Set([
+      ...retainedNotes,
+      ...questionOmissionNotes(messages),
+      ...(!hasDomain ? ["a concrete skill or experience area"] : []),
+      ...(!hasContext ? ["specific context or experience"] : []),
+      ...(!hasContribution ? ["the kind of help they would consider"] : []),
+      ...(!hasCadenceOrBoundary ? ["frequency or practical limits"] : []),
+    ]),
+  ].slice(0, 8);
   const coreComplete =
-    hasDomain && hasContext && hasContribution && hasCadenceOrBoundary;
+    gaps.length === 0 &&
+    hasDomain &&
+    hasContext &&
+    hasContribution &&
+    hasCadenceOrBoundary;
   return {
     confidence: coreComplete
       ? hasCadence && hasBoundary
@@ -93,6 +174,17 @@ function nextInterviewQuestion(
   const answers = userMessages(messages);
   const supplied = answers.join(" ");
 
+  const computerNote = coverage.gaps.find((gap) =>
+    gap.toLocaleLowerCase("en-US").includes("computer"),
+  );
+  if (computerNote)
+    return "You also mentioned computer work, but we have not covered it yet. What kinds of computers, systems, or tasks were part of that experience?";
+  const electronicsNote = coverage.gaps.find((gap) =>
+    gap.toLocaleLowerCase("en-US").includes("electronic"),
+  );
+  if (electronicsNote)
+    return "You also mentioned electronics work, but we have not covered it yet. What equipment, circuits, or tasks were involved?";
+
   if (LEGAL_ROLE.test(supplied)) {
     const hasSpecialty = LEGAL_SPECIALTY.test(supplied);
     const hasJurisdiction = LEGAL_JURISDICTION.test(supplied);
@@ -112,6 +204,14 @@ function nextInterviewQuestion(
     if (!coverage.hasContribution)
       return "Which parts of that experience would you enjoy using now—for example, tutoring, mentoring teachers, planning curriculum, or organizing programs?";
   }
+
+  if (
+    COMPUTER_TOPIC.test(supplied) &&
+    ELECTRONICS_TOPIC.test(supplied) &&
+    !COMPUTER_DETAIL.test(supplied) &&
+    !ELECTRONICS_DETAIL.test(supplied)
+  )
+    return "What kinds of computer work did you do, and what kinds of electronics work did you do?";
 
   if (!coverage.hasContext)
     return "Could you tell me a little more about the specific tasks, tools, settings, or people involved?";
@@ -137,8 +237,19 @@ export class FakeAiAdapter implements AiAdapter {
         action: "CONTINUE",
         message: safety.message,
         referenced_profile_text: null,
+        invalidate_proposed_profile: false,
         completeness_confidence: context.previousCompletenessConfidence,
-        coverage_gaps: [],
+        follow_up_notes: context.previousFollowUpNotes,
+      });
+    if (PROFILE_DELETION_REQUEST.test(latest))
+      return Promise.resolve({
+        action: "REQUEST_PROFILE_DELETION",
+        message:
+          "I can take you to the deletion confirmation. Nothing will be deleted until you explicitly confirm it there.",
+        referenced_profile_text: null,
+        invalidate_proposed_profile: true,
+        completeness_confidence: context.previousCompletenessConfidence,
+        follow_up_notes: context.previousFollowUpNotes,
       });
     if (
       context.hasProposedProfile &&
@@ -150,10 +261,15 @@ export class FakeAiAdapter implements AiAdapter {
         action: "SUBMIT_PROFILE",
         message: "I will submit the exact proposed profile.",
         referenced_profile_text: null,
+        invalidate_proposed_profile: false,
         completeness_confidence: context.previousCompletenessConfidence,
-        coverage_gaps: [],
+        follow_up_notes: context.previousFollowUpNotes,
       });
-    const coverage = assessCoverage(messages, context.currentProfile);
+    const coverage = assessCoverage(
+      messages,
+      context.currentProfile,
+      context.previousFollowUpNotes,
+    );
     if (
       /\b(create|prepare|show|write|revise|update)\b[\s\S]{0,40}\b(draft|profile|proposal)\b/iu.test(
         latest,
@@ -166,15 +282,21 @@ export class FakeAiAdapter implements AiAdapter {
         action: "PROPOSE_PROFILE",
         message: "I will prepare the proposed profile.",
         referenced_profile_text: null,
+        invalidate_proposed_profile: false,
         completeness_confidence: coverage.confidence,
-        coverage_gaps: coverage.gaps,
+        follow_up_notes: coverage.gaps,
       });
     return Promise.resolve({
       action: "CONTINUE",
       message: nextInterviewQuestion(messages, coverage),
       referenced_profile_text: null,
+      invalidate_proposed_profile:
+        context.hasProposedProfile &&
+        !/\b(?:how|where|what happens)\b[^.!?]{0,80}\b(?:submit|save|approve|profile)\b/iu.test(
+          latest,
+        ),
       completeness_confidence: coverage.confidence,
-      coverage_gaps: coverage.gaps,
+      follow_up_notes: coverage.gaps,
     });
   }
 

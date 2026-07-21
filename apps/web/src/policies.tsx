@@ -13,11 +13,12 @@ export function PrivacyNoticeContent({
     <>
       <p>
         Gifts in Service collects a display name, verified email associations,
-        pending interview questions and answers, exact volunteer profile prose
-        that a person reviews and approves, an embedding made only from that
-        prose, consent and lifecycle timestamps, authentication records,
-        deliverability state, and narrow security/audit events. It is for adults
-        age 18 or older; it does not collect a date of birth.
+        pending interview questions and answers, temporary notes about
+        unanswered interview threads, exact volunteer profile prose that a
+        person reviews and approves, an embedding made only from that prose,
+        consent and lifecycle timestamps, authentication records, deliverability
+        state, and narrow security/audit events. It is for adults age 18 or
+        older; it does not collect a date of birth.
       </p>
       <Heading>Purpose and viewers</Heading>
       <p>
@@ -106,13 +107,14 @@ export function AiUseContent({
       </p>
       <Heading>What is kept temporarily</Heading>
       <p>
-        Unfinished interview questions and answers, the latest proposal, and the
-        broad completeness level are saved in the encrypted application database
-        for up to 30 days so you can return after closing the page or requesting
-        a new magic link. They are deleted when you approve and save the profile
-        or when the 30-day period ends. They are not searchable by staff. The
-        system does not use Bedrock Agents, Knowledge Bases, or stateful model
-        sessions.
+        Unfinished interview questions and answers, the latest proposal, the
+        broad completeness level, and short notes about question threads that
+        still need follow-up are saved in the encrypted application database for
+        up to 30 days so you can return after closing the page or requesting a
+        new magic link. They are deleted when you approve and save the profile
+        or when the 30-day period ends. They are not searchable by staff or used
+        as suitability scores. The system does not use Bedrock Agents, Knowledge
+        Bases, or stateful model sessions.
       </p>
       <Heading>Search</Heading>
       <p>

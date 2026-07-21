@@ -885,8 +885,11 @@ export async function buildApp(
       const turn = await ai.interview(messages, {
         hasProposedProfile: pending.proposedProfile !== null,
         previousCompletenessConfidence: pending.completenessConfidence,
+        previousFollowUpNotes: pending.followUpNotes,
         currentProfile: person?.approvedText ?? null,
       });
+      const completenessConfidence =
+        turn.follow_up_notes.length > 0 ? "LOW" : turn.completeness_confidence;
       if (turn.action === "SUBMIT_PROFILE") {
         const exactProfile =
           pending.proposedProfile ??
@@ -917,6 +920,12 @@ export async function buildApp(
       }
       let proposedProfile = pending.proposedProfile;
       let message = turn.message;
+      if (turn.invalidate_proposed_profile) proposedProfile = null;
+      if (turn.action === "REQUEST_PROFILE_DELETION") {
+        proposedProfile = null;
+        message ||=
+          "I will take you to the deletion confirmation. Nothing will be deleted until you explicitly confirm it there.";
+      }
       if (
         turn.action === "PROPOSE_PROFILE" ||
         turn.action === "SUBMIT_PROFILE"
@@ -940,8 +949,9 @@ export async function buildApp(
           ...messages,
           { role: "assistant" as const, content: message },
         ],
-        completenessConfidence: turn.completeness_confidence,
-        ...(proposedProfile !== pending.proposedProfile && proposedProfile
+        completenessConfidence,
+        followUpNotes: turn.follow_up_notes,
+        ...(proposedProfile !== pending.proposedProfile
           ? { proposedProfile }
           : {}),
         now: current,
@@ -953,10 +963,11 @@ export async function buildApp(
         });
       return {
         saved: false,
+        deletionRequested: turn.action === "REQUEST_PROFILE_DELETION",
         message,
         revision,
         proposedProfile,
-        completenessConfidence: turn.completeness_confidence,
+        completenessConfidence,
         expiresAt: pending.expiresAt,
         promptVersion: PROMPT_VERSIONS.interviewer,
       };

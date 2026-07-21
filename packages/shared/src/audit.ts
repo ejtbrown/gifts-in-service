@@ -8,6 +8,8 @@ const FORBIDDEN_LOG_KEYS = new Set([
   "authorization",
   "cookie",
   "messages",
+  "followUpNotes",
+  "follow_up_notes",
   "requestBody",
   "responseBody",
   "ip",

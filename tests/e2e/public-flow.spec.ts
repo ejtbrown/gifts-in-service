@@ -183,6 +183,9 @@ test("fictional member resumes a pending interview through a new link, approves 
     page.getByRole("heading", { name: "Update your profile" }),
   ).toBeVisible();
   await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
+  await expect(
     page
       .getByRole("article", { name: "Your current profile" })
       .getByText(exactDraft, { exact: true }),
@@ -212,6 +215,23 @@ test("fictional member resumes a pending interview through a new link, approves 
       .last()
       .getByText(/prefer one-time accessibility reviews/u),
   ).toBeVisible();
+  const postProposalAddition =
+    "Also add that I maintained computer networks and servers and can offer occasional troubleshooting advice.";
+  await page.getByLabel("Your response").fill(postProposalAddition);
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByText(postProposalAddition, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Submit profile" }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Your response")
+    .fill("Please prepare the updated proposed profile now.");
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByRole("button", { name: "Submit profile" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Submit profile" }).click();
   await expect(
     page.getByRole("heading", { name: "Complete Browser Fiction" }),
@@ -224,9 +244,22 @@ test("fictional member resumes a pending interview through a new link, approves 
       .locator(".profile-prose")
       .getByText(/prefer one-time accessibility reviews/u),
   ).toBeVisible();
+  await expect(
+    page.locator(".profile-prose").getByText(/computer networks and servers/u),
+  ).toBeVisible();
   await page.getByRole("button", { name: "That Looks Right" }).click();
   await expect(page.getByText("Your profile was reconfirmed.")).toBeVisible();
-  await page.getByRole("link", { name: "Permanently delete" }).click();
+  await expect(
+    page.getByRole("link", { name: "Delete Profile" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Let Me Update This" }).click();
+  await page
+    .getByLabel("Your response")
+    .fill("Please delete my entire Gifts in Service profile.");
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Permanently delete your profile" }),
+  ).toBeVisible();
   await page.getByLabel("Type DELETE to confirm").fill("DELETE");
   await page.getByRole("button", { name: "Permanently delete" }).click();
   await expect(

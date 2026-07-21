@@ -643,8 +643,11 @@ export function MemberPage() {
           <Link className="button secondary" to="/member/emails">
             Manage name and emails
           </Link>
-          <Link className="button danger" to="/member/delete">
-            Permanently delete
+          <Link
+            className="button danger profile-control-delete"
+            to="/member/delete"
+          >
+            Delete Profile
           </Link>
         </div>
       </section>
@@ -674,6 +677,7 @@ type InterviewTurnResponse =
   | { saved: true }
   | {
       saved: false;
+      deletionRequested: boolean;
       message: string;
       revision: number;
       proposedProfile: string | null;
@@ -772,6 +776,10 @@ export function InterviewPage() {
       setRevision(response.revision);
       setProposedProfile(response.proposedProfile);
       setCompletenessConfidence(response.completenessConfidence);
+      if (response.deletionRequested) {
+        void navigate("/member/delete");
+        return;
+      }
     } catch (caught) {
       setMessages(previousMessages);
       setInput(responseText);
@@ -946,7 +954,13 @@ export function InterviewPage() {
               : "Press Enter to send, or create a draft if you are ready to wrap up. Press Shift+Enter for a new line."}
         </span>
         <div className="button-row">
-          {proposedProfile ? (
+          <button
+            className={`button ${proposedProfile ? "secondary" : "primary"}`}
+            disabled={busy || !input.trim()}
+          >
+            {busy && !submitting ? "Thinking…" : "Send response"}
+          </button>
+          {proposedProfile && (
             <button
               className="button primary"
               type="button"
@@ -954,10 +968,6 @@ export function InterviewPage() {
               onClick={() => void submitProposedProfile()}
             >
               {submitting ? "Submitting profile…" : "Submit profile"}
-            </button>
-          ) : (
-            <button className="button primary" disabled={busy || !input.trim()}>
-              {busy ? "Thinking…" : "Send response"}
             </button>
           )}
           <button
@@ -973,6 +983,16 @@ export function InterviewPage() {
           >
             Create a draft
           </button>
+          {currentProfile && (
+            <button
+              className="button danger profile-control-delete"
+              type="button"
+              disabled={busy}
+              onClick={() => void navigate("/member/delete")}
+            >
+              Delete Profile
+            </button>
+          )}
         </div>
       </form>
     </div>
