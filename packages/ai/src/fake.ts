@@ -96,6 +96,22 @@ function questionOmissionNotes(
   ];
 }
 
+function introducedTopicNotes(messages: readonly InterviewMessage[]): string[] {
+  const supplied = userMessages(messages).join(" ");
+  return [
+    ...(COMPUTER_TOPIC.test(supplied) &&
+    !COMPUTER_DETAIL.test(supplied) &&
+    !explicitlyDeclines(supplied, COMPUTER_TOPIC)
+      ? ["computer experience introduced earlier still needs follow-up"]
+      : []),
+    ...(ELECTRONICS_TOPIC.test(supplied) &&
+    !ELECTRONICS_DETAIL.test(supplied) &&
+    !explicitlyDeclines(supplied, ELECTRONICS_TOPIC)
+      ? ["electronics experience introduced earlier still needs follow-up"]
+      : []),
+  ];
+}
+
 function assessCoverage(
   messages: readonly InterviewMessage[],
   currentProfile: string | null,
@@ -141,6 +157,7 @@ function assessCoverage(
   const gaps = [
     ...new Set([
       ...retainedNotes,
+      ...introducedTopicNotes(messages),
       ...questionOmissionNotes(messages),
       ...(!hasDomain ? ["a concrete skill or experience area"] : []),
       ...(!hasContext ? ["specific context or experience"] : []),

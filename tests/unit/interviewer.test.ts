@@ -170,6 +170,40 @@ describe("probative interview flow", () => {
     expect(state.confidence).toMatch(/MODERATE|HIGH/u);
   });
 
+  it("retains an introduced topic even when the assistant never asked about it", async () => {
+    const turn = await ai.interview(
+      [
+        {
+          role: "assistant",
+          content: "What experience would you like to start with?",
+        },
+        {
+          role: "user",
+          content:
+            "I had a 30-year career working with computers and electronics.",
+        },
+        {
+          role: "assistant",
+          content: "What kinds of electronics work did you do?",
+        },
+        {
+          role: "user",
+          content:
+            "I repaired circuit boards and soldered components, and I could offer occasional troubleshooting advice only.",
+        },
+      ],
+      initialContext,
+    );
+
+    expect(turn.completeness_confidence).toBe("LOW");
+    expect(turn.follow_up_notes).toContain(
+      "computer experience introduced earlier still needs follow-up",
+    );
+    expect(turn.message).toMatch(
+      /computer work.*not covered|computers.*tasks/iu,
+    );
+  });
+
   it("routes a whole-profile deletion request to confirmation without confusing it with an edit", async () => {
     const deletion = await ai.interview(
       [
