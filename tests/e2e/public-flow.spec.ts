@@ -127,6 +127,9 @@ test("fictional member resumes a pending interview through a new link, approves 
   await expect(
     page.getByRole("heading", { name: "Tell us about your gifts" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
   const response = page.getByLabel("Your response");
   const rejectedSensitiveInput = "My fictional SSN is 000-00-0000.";
   await response.fill(rejectedSensitiveInput);
@@ -159,6 +162,9 @@ test("fictional member resumes a pending interview through a new link, approves 
     .getByRole("button", { name: "Continue as Complete Browser Fiction" })
     .click();
   await expect(page.getByText(firstAnswer, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Create a draft" }).click();
   const exactDraft = await page
     .getByLabel("Exact proposed profile")
@@ -291,6 +297,9 @@ test("shared mailbox chooser keeps two fictional profiles distinct", async ({
   await page.getByRole("button", { name: "Continue as Taylor Sample" }).click();
   await expect(
     page.getByRole("heading", { name: "Update your profile" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
   ).toBeVisible();
 });
 

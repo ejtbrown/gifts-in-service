@@ -983,16 +983,14 @@ export function InterviewPage() {
           >
             Create a draft
           </button>
-          {currentProfile && (
-            <button
-              className="button danger profile-control-delete"
-              type="button"
-              disabled={busy}
-              onClick={() => void navigate("/member/delete")}
-            >
-              Delete Profile
-            </button>
-          )}
+          <button
+            className="button danger profile-control-delete"
+            type="button"
+            disabled={busy}
+            onClick={() => void navigate("/member/delete")}
+          >
+            Delete Profile
+          </button>
         </div>
       </form>
     </div>
