@@ -14,6 +14,7 @@ describe("AI safety boundaries", () => {
       {
         hasProposedProfile: false,
         previousCompletenessConfidence: "LOW",
+        previousFollowUpNotes: [],
         currentProfile: null,
       },
     );

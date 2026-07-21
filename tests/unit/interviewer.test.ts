@@ -9,6 +9,7 @@ const ai = new FakeAiAdapter();
 const initialContext: InterviewContext = {
   hasProposedProfile: false,
   previousCompletenessConfidence: "LOW",
+  previousFollowUpNotes: [],
   currentProfile: null,
 };
 
@@ -36,6 +37,7 @@ async function continueInterview(
     context: {
       ...context,
       previousCompletenessConfidence: turn.completeness_confidence,
+      previousFollowUpNotes: turn.follow_up_notes,
     },
     message: turn.message,
     action: turn.action,
@@ -133,5 +135,61 @@ describe("probative interview flow", () => {
     );
     expect(turn.action).toBe("PROPOSE_PROFILE");
     expect(turn.completeness_confidence).toBe("LOW");
+  });
+
+  it("retains an omitted question thread until it is answered", async () => {
+    let state = await continueInterview(
+      [
+        {
+          role: "assistant",
+          content:
+            "You mentioned computers and electronics. What computer work did you do, and what electronics work did you do?",
+        },
+      ],
+      "For electronics, I repaired circuit boards and soldered components. I could offer occasional troubleshooting advice only.",
+      initialContext,
+    );
+
+    expect(state.confidence).toBe("LOW");
+    expect(state.context.previousFollowUpNotes).toContain(
+      "computer experience introduced earlier still needs follow-up",
+    );
+    expect(state.message).toMatch(
+      /computer work.*not covered|computers.*tasks/iu,
+    );
+
+    state = await continueInterview(
+      state.messages,
+      "My computer work included desktop support, networks, and server administration.",
+      state.context,
+    );
+
+    expect(state.context.previousFollowUpNotes).not.toContain(
+      "computer experience introduced earlier still needs follow-up",
+    );
+    expect(state.confidence).toMatch(/MODERATE|HIGH/u);
+  });
+
+  it("routes a whole-profile deletion request to confirmation without confusing it with an edit", async () => {
+    const deletion = await ai.interview(
+      [
+        { role: "assistant", content: "What would you like to change?" },
+        { role: "user", content: "Please delete my entire profile." },
+      ],
+      { ...initialContext, currentProfile: "Existing fictional profile text." },
+    );
+    expect(deletion.action).toBe("REQUEST_PROFILE_DELETION");
+
+    const edit = await ai.interview(
+      [
+        { role: "assistant", content: "What would you like to change?" },
+        {
+          role: "user",
+          content: "Please remove computer repair from my profile.",
+        },
+      ],
+      { ...initialContext, currentProfile: "Existing fictional profile text." },
+    );
+    expect(edit.action).not.toBe("REQUEST_PROFILE_DELETION");
   });
 });

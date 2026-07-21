@@ -25,7 +25,7 @@ flowchart LR
 
 ## Trust boundaries and data flow
 
-- The public/member Lambda stores one person-scoped pending transcript in encrypted Aurora for a fixed 30 days. The server supplies the authoritative transcript to stateless model calls. It is deleted on approval, expiry, or person purge and is never exposed to staff search.
+- The public/member Lambda stores one person-scoped pending transcript, completeness state, and bounded unanswered-thread notes in encrypted Aurora for a fixed 30 days. The server supplies that authoritative state to stateless model calls. It is deleted on approval, expiry, or person purge and is never exposed to staff search.
 - API Gateway, WAF, CloudFront, Lambda logs, traces, and application logs are configured or coded without request/response bodies. Production is blocked until an operator independently confirms Bedrock retention and invocation-logging posture.
 - A profile draft remains transient until the member approves the exact text. Approval is bound to a short-lived server-side token and SHA-256 hash; the embedding is made from that exact text only.
 - Magic links place 256-bit opaque material in the URL fragment. Only keyed hashes are stored. Redemption is a POST and rotates to an opaque, hashed member session with CSRF and Origin checks. Member sessions have a fixed 30-day absolute lifetime that activity does not extend.
@@ -80,6 +80,9 @@ erDiagram
   PENDING_INTERVIEWS {
     uuid person_id PK
     jsonb messages
+    text proposed_profile
+    text completeness_confidence
+    jsonb follow_up_notes
     integer revision
     timestamptz started_at
     timestamptz expires_at

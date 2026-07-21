@@ -518,6 +518,9 @@ textarea {
 .review-actions {
   margin-top: 2rem;
 }
+.profile-control-delete {
+  margin-left: auto;
+}
 .form-error {
   color: #842828;
   font-weight: 750;
@@ -941,6 +944,9 @@ td {
   .button-row .button,
   .review-actions .button {
     width: 100%;
+  }
+  .profile-control-delete {
+    margin-left: 0;
   }
   .site-footer .shell {
     display: block;

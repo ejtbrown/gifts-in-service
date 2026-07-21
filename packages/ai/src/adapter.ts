@@ -6,7 +6,7 @@ import type {
 } from "@gis/shared";
 
 export const PROMPT_VERSIONS = {
-  interviewer: "interviewer-2026-07-20.v3",
+  interviewer: "interviewer-2026-07-21.v4",
   profileDrafter: "profile-drafter-2026-07-15.v1",
   searchPlanner: "search-planner-2026-07-15.v1",
   searchReranker: "search-reranker-2026-07-19.v2",
@@ -18,16 +18,22 @@ export interface ProfileDraft {
 }
 
 export interface InterviewTurn {
-  action: "CONTINUE" | "PROPOSE_PROFILE" | "SUBMIT_PROFILE";
+  action:
+    | "CONTINUE"
+    | "PROPOSE_PROFILE"
+    | "SUBMIT_PROFILE"
+    | "REQUEST_PROFILE_DELETION";
   message: string;
   referenced_profile_text: string | null;
+  invalidate_proposed_profile: boolean;
   completeness_confidence: InterviewCompleteness;
-  coverage_gaps: string[];
+  follow_up_notes: string[];
 }
 
 export interface InterviewContext {
   hasProposedProfile: boolean;
   previousCompletenessConfidence: InterviewCompleteness;
+  previousFollowUpNotes: string[];
   currentProfile: string | null;
 }
 
