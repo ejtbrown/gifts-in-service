@@ -53,6 +53,7 @@ describe("time-controlled stale profile lifecycle", () => {
     await repository.startPendingInterview({
       personId,
       openingMessage: "What would you like to share?",
+      initialCompletenessConfidence: "LOW",
       now: startedAt,
     });
 

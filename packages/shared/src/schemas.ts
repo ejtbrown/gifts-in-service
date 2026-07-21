@@ -41,6 +41,8 @@ export const interviewResponseSchema = z.object({
   revision: z.number().int().min(0),
 });
 
+export const interviewCompletenessSchema = z.enum(["LOW", "MODERATE", "HIGH"]);
+
 export const profileDraftRequestSchema = z.object({
   revision: z.number().int().min(0),
 });
@@ -107,6 +109,7 @@ export const groupSchema = z.enum([
 export type InterviewMessage = z.infer<
   typeof interviewMessageSchema
 >["messages"][number];
+export type InterviewCompleteness = z.infer<typeof interviewCompletenessSchema>;
 export type SearchPlan = z.infer<typeof searchPlanSchema>;
 export type RerankerOutput = z.infer<typeof rerankerOutputSchema>;
 export type ProfileStatus = z.infer<typeof profileStatusSchema>;

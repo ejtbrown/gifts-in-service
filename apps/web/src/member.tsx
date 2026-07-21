@@ -1,4 +1,8 @@
-import { CONSENT_VERSION, type InterviewMessage } from "@gis/shared";
+import {
+  CONSENT_VERSION,
+  type InterviewCompleteness,
+  type InterviewMessage,
+} from "@gis/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, getMemberSession, setMemberCsrf } from "./api.js";
@@ -659,6 +663,7 @@ interface DraftState {
 interface PendingInterviewResponse {
   messages: InterviewMessage[];
   proposedProfile: string | null;
+  completenessConfidence: InterviewCompleteness;
   revision: number;
   currentProfile: string | null;
   startedAt: string;
@@ -672,6 +677,7 @@ type InterviewTurnResponse =
       message: string;
       revision: number;
       proposedProfile: string | null;
+      completenessConfidence: InterviewCompleteness;
     };
 
 export function InterviewPage() {
@@ -679,6 +685,8 @@ export function InterviewPage() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<InterviewMessage[]>([]);
   const [proposedProfile, setProposedProfile] = useState<string | null>(null);
+  const [completenessConfidence, setCompletenessConfidence] =
+    useState<InterviewCompleteness>("LOW");
   const [revision, setRevision] = useState<number | null>(null);
   const [currentProfile, setCurrentProfile] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState("");
@@ -703,6 +711,7 @@ export function InterviewPage() {
         if (!active) return;
         setMessages(response.messages);
         setProposedProfile(response.proposedProfile);
+        setCompletenessConfidence(response.completenessConfidence);
         setRevision(response.revision);
         setCurrentProfile(response.currentProfile);
         setExpiresAt(response.expiresAt);
@@ -762,6 +771,7 @@ export function InterviewPage() {
       setMessages([...next, { role: "assistant", content: response.message }]);
       setRevision(response.revision);
       setProposedProfile(response.proposedProfile);
+      setCompletenessConfidence(response.completenessConfidence);
     } catch (caught) {
       setMessages(previousMessages);
       setInput(responseText);
@@ -931,7 +941,9 @@ export function InterviewPage() {
         <span id="chat-input-help" className="field-help">
           {proposedProfile
             ? "Press Enter to request changes or ask the assistant to submit this profile. Press Shift+Enter for a new line."
-            : "Press Enter to send. Press Shift+Enter for a new line."}
+            : completenessConfidence === "LOW"
+              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time. Press Shift+Enter for a new line."
+              : "Press Enter to send, or create a draft if you are ready to wrap up. Press Shift+Enter for a new line."}
         </span>
         <div className="button-row">
           {proposedProfile ? (
@@ -951,7 +963,12 @@ export function InterviewPage() {
           <button
             className="button secondary"
             type="button"
-            disabled={busy || messages.length < 3 || Boolean(proposedProfile)}
+            disabled={
+              busy ||
+              messages.length < 3 ||
+              completenessConfidence === "LOW" ||
+              Boolean(proposedProfile)
+            }
             onClick={() => void draft()}
           >
             Create a draft

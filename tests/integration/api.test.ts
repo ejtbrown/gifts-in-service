@@ -411,8 +411,10 @@ describe("public/member API security flow", () => {
     const initialInterview = interview.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
     }>();
     expect(initialInterview.revision).toBe(0);
+    expect(initialInterview.completenessConfidence).toBe("LOW");
     expect(initialInterview.messages).toHaveLength(1);
     const rejectedSensitiveInput = await app.inject({
       method: "POST",
@@ -492,8 +494,21 @@ describe("public/member API security flow", () => {
       },
     });
     expect(answer.statusCode).toBe(200);
-    const interviewRevision = answer.json<{ revision: number }>().revision;
+    const answerBody = answer.json<{
+      revision: number;
+      completenessConfidence: string;
+    }>();
+    const interviewRevision = answerBody.revision;
     expect(interviewRevision).toBe(1);
+    expect(answerBody.completenessConfidence).toMatch(/MODERATE|HIGH/u);
+    expect(
+      (
+        await repository.getPendingInterview(
+          create.json<{ personId: string }>().personId,
+          new Date(),
+        )
+      )?.completenessConfidence,
+    ).toBe(answerBody.completenessConfidence);
     const draft = await app.inject({
       method: "POST",
       url: "/api/member/interview/draft",
@@ -621,6 +636,7 @@ describe("public/member API security flow", () => {
     const initial = firstStart.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
       startedAt: string;
       expiresAt: string;
     }>();
@@ -684,10 +700,12 @@ describe("public/member API security flow", () => {
     const resumed = resumedResponse.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
       startedAt: string;
       expiresAt: string;
     }>();
     expect(resumed.revision).toBe(1);
+    expect(resumed.completenessConfidence).toBe("MODERATE");
     expect(resumed.messages.map((message) => message.content)).toContain(
       responseText,
     );

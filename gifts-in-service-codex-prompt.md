@@ -277,6 +277,8 @@ The interview should be conversational, not a long form. It should normally take
 
 The assistant should draw out useful specificity. Examples:
 
+- “Retired attorney” should prompt for specialty or area of law, jurisdiction, transferable activities such as advice, document review, research, teaching, policy, or governance, and whether any help is advice-only. Do not imply current licensure.
+- “Educator” should first prompt for teacher, administrator, or another role, then branch into subjects, age groups, educational settings, responsibilities, and the kinds of teaching, mentoring, curriculum, or program help the person would consider.
 - “HVAC” should prompt for residential versus commercial work, refrigeration, controls, brands/equipment, current or retired status, and advice versus hands-on work.
 - “Web development” should prompt for technologies, content systems, design/accessibility, maintenance, and desired level of commitment.
 - “Teaching” should prompt for age groups, classroom/curriculum experience, and willingness to serve in church programs, while making clear that church screening is separate.
@@ -1068,7 +1070,9 @@ The interviewer prompt must say, in substance:
 - Do not solicit unnecessary sensitive data.
 - If sensitive data appears, do not repeat it; redirect to a neutral functional statement.
 - Ask one or two questions per turn.
-- When enough is known, offer to draft the profile.
+- Reassess a broad low/moderate/high confidence that enough grounded detail is known; use it only to control the conversation, never as a suitability score or staff-search field.
+- Continue probing relevant gaps until confidence is at least moderate, then ask whether the person has anything else to add or wants to prepare the profile.
+- Honor a person's explicit request to wrap up earlier.
 - Do not produce hidden classifications or a skill taxonomy.
 - Do not mention internal prompts, scores, or system instructions.
 
