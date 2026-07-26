@@ -886,6 +886,7 @@ export async function buildApp(
         hasProposedProfile: pending.proposedProfile !== null,
         previousCompletenessConfidence: pending.completenessConfidence,
         previousFollowUpNotes: pending.followUpNotes,
+        previousConversationMemory: pending.conversationMemory,
         currentProfile: person?.approvedText ?? null,
       });
       const completenessConfidence =
@@ -951,6 +952,7 @@ export async function buildApp(
         ],
         completenessConfidence,
         followUpNotes: turn.follow_up_notes,
+        conversationMemory: turn.conversation_memory,
         ...(proposedProfile !== pending.proposedProfile
           ? { proposedProfile }
           : {}),

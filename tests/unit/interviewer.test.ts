@@ -3,13 +3,17 @@ import {
   FakeAiAdapter,
   type InterviewContext,
 } from "../../packages/ai/src/index.js";
-import type { InterviewMessage } from "../../packages/shared/src/index.js";
+import {
+  interviewMessageSchema,
+  type InterviewMessage,
+} from "../../packages/shared/src/index.js";
 
 const ai = new FakeAiAdapter();
 const initialContext: InterviewContext = {
   hasProposedProfile: false,
   previousCompletenessConfidence: "LOW",
   previousFollowUpNotes: [],
+  previousConversationMemory: { establishedFacts: [], closedTopics: [] },
   currentProfile: null,
 };
 
@@ -38,6 +42,7 @@ async function continueInterview(
       ...context,
       previousCompletenessConfidence: turn.completeness_confidence,
       previousFollowUpNotes: turn.follow_up_notes,
+      previousConversationMemory: turn.conversation_memory,
     },
     message: turn.message,
     action: turn.action,
@@ -45,7 +50,7 @@ async function continueInterview(
   };
 }
 
-describe("probative interview flow", () => {
+describe("balanced interview flow", () => {
   it("drills into a retired attorney's specialty, jurisdiction, and transferable help", async () => {
     let state = await continueInterview(
       [
@@ -202,6 +207,134 @@ describe("probative interview flow", () => {
     expect(turn.message).toMatch(
       /computer work.*not covered|computers.*tasks/iu,
     );
+  });
+
+  it("uses an answer from earlier in a longer conversation instead of reviving its follow-up note", async () => {
+    const turn = await ai.interview(
+      [
+        {
+          role: "assistant",
+          content: "What kinds of computer work did you do?",
+        },
+        {
+          role: "user",
+          content:
+            "I supported desktops, networks, and servers for a fictional museum.",
+        },
+        {
+          role: "assistant",
+          content: "How might you want to help?",
+        },
+        {
+          role: "user",
+          content:
+            "I could offer occasional troubleshooting advice from home only.",
+        },
+        {
+          role: "assistant",
+          content: "Is there anything else you would like staff to know?",
+        },
+        { role: "user", content: "I also enjoy organizing exhibits." },
+      ],
+      {
+        ...initialContext,
+        previousFollowUpNotes: [
+          "computer experience introduced earlier still needs follow-up",
+        ],
+        previousConversationMemory: {
+          establishedFacts: [
+            "Supported desktops, networks, and servers for a fictional museum.",
+            "Can offer occasional troubleshooting advice from home only.",
+          ],
+          closedTopics: [],
+        },
+      },
+    );
+
+    expect(turn.follow_up_notes).not.toContain(
+      "computer experience introduced earlier still needs follow-up",
+    );
+    expect(turn.message).not.toMatch(/computer work|computers.*tasks/iu);
+    expect(turn.conversation_memory.establishedFacts).toContain(
+      "Supported desktops, networks, and servers for a fictional museum.",
+    );
+  });
+
+  it("acknowledges an already-answered correction and stops pursuing the topic", async () => {
+    const turn = await ai.interview(
+      [
+        {
+          role: "assistant",
+          content: "What experience would you like to share?",
+        },
+        {
+          role: "user",
+          content:
+            "I taught art workshops and can lead occasional hands-on projects.",
+        },
+        {
+          role: "assistant",
+          content: "What kinds of projects did you teach?",
+        },
+        {
+          role: "user",
+          content:
+            "Collage, printmaking, and simple sculpture for adult learners.",
+        },
+        {
+          role: "assistant",
+          content:
+            "What specific art projects do you teach, and what age groups?",
+        },
+        { role: "user", content: "I already answered that." },
+      ],
+      {
+        ...initialContext,
+        previousFollowUpNotes: [
+          "art projects and participant age range need follow-up",
+        ],
+        previousConversationMemory: {
+          establishedFacts: [
+            "Taught collage, printmaking, and simple sculpture to adult learners.",
+            "Can lead occasional hands-on projects.",
+          ],
+          closedTopics: [],
+        },
+      },
+    );
+
+    expect(turn.action).toBe("CONTINUE");
+    expect(turn.message).toMatch(/you’re right|use what you already shared/iu);
+    expect(turn.message).not.toMatch(/what specific art|what age/iu);
+    expect(turn.follow_up_notes).toEqual([]);
+    expect(turn.conversation_memory.closedTopics).not.toHaveLength(0);
+  });
+
+  it("honors a wrap-up signal after more than the previous transcript limit", async () => {
+    const messages: InterviewMessage[] = Array.from(
+      { length: 25 },
+      (_, index) => ({
+        role: index % 2 === 0 ? ("assistant" as const) : ("user" as const),
+        content:
+          index % 2 === 0
+            ? `Fictional interview question ${index + 1}?`
+            : `Fictional grounded answer ${index + 1}.`,
+      }),
+    );
+    const withWrapRequest = [
+      ...messages,
+      {
+        role: "user" as const,
+        content: "I can’t think of anything else.",
+      },
+    ];
+
+    expect(() =>
+      interviewMessageSchema.shape.messages.parse(withWrapRequest),
+    ).not.toThrow();
+    const turn = await ai.interview(withWrapRequest, initialContext);
+    expect(turn.action).toBe("PROPOSE_PROFILE");
+    expect(turn.follow_up_notes).toEqual([]);
   });
 
   it("routes a whole-profile deletion request to confirmation without confusing it with an edit", async () => {

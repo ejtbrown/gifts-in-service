@@ -25,7 +25,7 @@ flowchart LR
 
 ## Trust boundaries and data flow
 
-- The public/member Lambda stores one person-scoped pending transcript, completeness state, and bounded unanswered-thread notes in encrypted Aurora for a fixed 30 days. The server supplies that authoritative state to stateless model calls. It is deleted on approval, expiry, or person purge and is never exposed to staff search.
+- The public/member Lambda stores one person-scoped pending transcript, completeness state, bounded optional follow-up notes, and bounded conversation memory of established facts and member-closed topics in encrypted Aurora for a fixed 30 days. The server supplies that state to stateless model calls so long interviews do not lose earlier answers or reopen closed threads. It is deleted on approval, expiry, or person purge and is never exposed to staff search.
 - API Gateway, WAF, CloudFront, Lambda logs, traces, and application logs are configured or coded without request/response bodies. Production is blocked until an operator independently confirms Bedrock retention and invocation-logging posture.
 - A profile draft remains transient until the member approves the exact text. Approval is bound to a short-lived server-side token and SHA-256 hash; the embedding is made from that exact text only.
 - Magic links place 256-bit opaque material in the URL fragment. Only keyed hashes are stored. Redemption is a POST and rotates to an opaque, hashed member session with CSRF and Origin checks. Member sessions have a fixed 30-day absolute lifetime that activity does not extend.
@@ -83,6 +83,7 @@ erDiagram
     text proposed_profile
     text completeness_confidence
     jsonb follow_up_notes
+    jsonb conversation_memory
     integer revision
     timestamptz started_at
     timestamptz expires_at
@@ -110,4 +111,4 @@ erDiagram
   }
 ```
 
-Material choices are recorded in [ADR 0001](adr/0001-approved-prose-and-stateless-interviews.md), [ADR 0002](adr/0002-serverless-data-api-and-hybrid-search.md), [ADR 0003](adr/0003-separate-opaque-sessions.md), [ADR 0004](adr/0004-resumable-pending-interviews.md), and [ADR 0005](adr/0005-in-page-cognito-staff-auth.md). ADR 0004 supersedes ADR 0001's stateless-interview decision, and ADR 0005 supersedes ADR 0003's hosted authorization-code details.
+Material choices are recorded in [ADR 0001](adr/0001-approved-prose-and-stateless-interviews.md), [ADR 0002](adr/0002-serverless-data-api-and-hybrid-search.md), [ADR 0003](adr/0003-separate-opaque-sessions.md), [ADR 0004](adr/0004-resumable-pending-interviews.md), [ADR 0005](adr/0005-in-page-cognito-staff-auth.md), [ADR 0006](adr/0006-environment-branch-promotion.md), and [ADR 0007](adr/0007-balanced-interview-memory.md). ADR 0004 supersedes ADR 0001's stateless-interview decision, and ADR 0005 supersedes ADR 0003's hosted authorization-code details.

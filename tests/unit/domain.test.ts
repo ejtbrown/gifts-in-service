@@ -194,6 +194,17 @@ describe("sanitized logging", () => {
     expect(
       containsForbiddenLogField({ follow_up_notes: ["unfinished thread"] }),
     ).toBe(true);
+    expect(
+      containsForbiddenLogField({
+        conversationMemory: {
+          establishedFacts: ["fictional established fact"],
+          closedTopics: [],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({ conversation_memory: { closedTopics: [] } }),
+    ).toBe(true);
   });
 
   it("drops bodies, queries, tokens, email, and raw IP fields", () => {

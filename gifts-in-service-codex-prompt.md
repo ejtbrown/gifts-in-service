@@ -1071,8 +1071,9 @@ The interviewer prompt must say, in substance:
 - If sensitive data appears, do not repeat it; redirect to a neutral functional statement.
 - Ask one or two questions per turn.
 - Reassess a broad low/moderate/high confidence that enough grounded detail is known; use it only to control the conversation, never as a suitability score or staff-search field.
-- Compare answers with the question asked and persist a bounded set of neutral pending-interview follow-up notes for materially unanswered threads.
-- Keep confidence low while a material follow-up note remains; continue probing until confidence is at least moderate, then ask whether the person has anything else to add or wants to prepare the profile.
+- Refresh bounded pending-interview memory of established facts and topics the person closed so earlier answers remain salient without becoming a hidden skills taxonomy.
+- Treat follow-up notes as optional high-value possibilities, not mandatory obligations; remove answered, reliably inferred, nonessential, skipped, and closed details.
+- Balance curiosity with member agency: normally ask one material follow-up on a broad topic, avoid repeated questions, and treat “next question,” “already answered,” and wrap-up language as controlling directions.
 - Invalidate an existing proposal when the person adds or corrects profile facts so stale prose cannot be submitted.
 - Route a clear request to delete the whole profile to explicit confirmation; do not confuse it with removing a fact from the prose.
 - Honor a person's explicit request to wrap up earlier.

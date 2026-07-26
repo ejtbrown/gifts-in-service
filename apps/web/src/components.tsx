@@ -1,5 +1,5 @@
 import { Component, Suspense, type ReactNode } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router";
 import { useConfig } from "./context.js";
 
 export function RootLayout() {

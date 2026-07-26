@@ -1,12 +1,13 @@
 import type {
   InterviewCompleteness,
+  InterviewConversationMemory,
   InterviewMessage,
   RerankerOutput,
   SearchPlan,
 } from "@gis/shared";
 
 export const PROMPT_VERSIONS = {
-  interviewer: "interviewer-2026-07-21.v5",
+  interviewer: "interviewer-2026-07-26.v6",
   profileDrafter: "profile-drafter-2026-07-15.v1",
   searchPlanner: "search-planner-2026-07-15.v1",
   searchReranker: "search-reranker-2026-07-19.v2",
@@ -28,12 +29,14 @@ export interface InterviewTurn {
   invalidate_proposed_profile: boolean;
   completeness_confidence: InterviewCompleteness;
   follow_up_notes: string[];
+  conversation_memory: InterviewConversationMemory;
 }
 
 export interface InterviewContext {
   hasProposedProfile: boolean;
   previousCompletenessConfidence: InterviewCompleteness;
   previousFollowUpNotes: string[];
+  previousConversationMemory: InterviewConversationMemory;
   currentProfile: string | null;
 }
 
