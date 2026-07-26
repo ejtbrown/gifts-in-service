@@ -4,7 +4,7 @@ import {
   type InterviewMessage,
 } from "@gis/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { api, getMemberSession, setMemberCsrf } from "./api.js";
 import { Loading, Notice } from "./components.js";
 import { useConfig } from "./context.js";

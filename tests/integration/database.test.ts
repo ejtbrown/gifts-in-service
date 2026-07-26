@@ -92,6 +92,12 @@ describe("PostgreSQL invariants", () => {
         messages,
         completenessConfidence: "LOW",
         followUpNotes: ["computer experience still needs follow-up"],
+        conversationMemory: {
+          establishedFacts: [
+            "Can help organize occasional fictional community events.",
+          ],
+          closedTopics: [],
+        },
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -103,6 +109,12 @@ describe("PostgreSQL invariants", () => {
         messages,
         completenessConfidence: "MODERATE",
         followUpNotes: [],
+        conversationMemory: {
+          establishedFacts: [
+            "Can help organize occasional fictional community events.",
+          ],
+          closedTopics: [],
+        },
         now: new Date("2026-07-16T13:01:00.000Z"),
       }),
     ).toBeNull();
@@ -116,6 +128,12 @@ describe("PostgreSQL invariants", () => {
     expect(resumed?.followUpNotes).toEqual([
       "computer experience still needs follow-up",
     ]);
+    expect(resumed?.conversationMemory).toEqual({
+      establishedFacts: [
+        "Can help organize occasional fictional community events.",
+      ],
+      closedTopics: [],
+    });
 
     expect(
       await repository.saveApprovedProfile({

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useNavigate, useParams } from "react-router";
 import QRCode from "qrcode";
 import { api, setStaffCsrf } from "./api.js";
 import { Loading, Notice } from "./components.js";

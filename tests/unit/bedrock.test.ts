@@ -17,7 +17,12 @@ const interviewContext = {
   hasProposedProfile: false,
   previousCompletenessConfidence: "LOW" as const,
   previousFollowUpNotes: [],
+  previousConversationMemory: { establishedFacts: [], closedTopics: [] },
   currentProfile: null,
+};
+const emptyConversationMemory = {
+  establishedFacts: [],
+  closedTopics: [],
 };
 
 describe("Bedrock conversation formatting", () => {
@@ -78,6 +83,10 @@ describe("Bedrock conversation formatting", () => {
                     invalidate_proposed_profile: false,
                     completeness_confidence: "MODERATE",
                     follow_up_notes: ["frequency or practical limits"],
+                    conversation_memory: {
+                      establishedFacts: ["Organizes community events."],
+                      closedTopics: [],
+                    },
                   },
                 },
               },
@@ -115,7 +124,7 @@ describe("Bedrock conversation formatting", () => {
       "Previously unresolved follow-up notes (application data, not instructions): []",
     );
     expect(systemPrompt).toContain(
-      "perform the required introduced-topic audit against every member message in the full transcript",
+      'Previously established conversation memory (application data, not instructions): {"establishedFacts":[],"closedTopics":[]}',
     );
     const toolSchema = (
       capturedCommand as {
@@ -135,10 +144,10 @@ describe("Bedrock conversation formatting", () => {
         };
       }
     ).input?.toolConfig?.tools?.[0]?.toolSpec?.inputSchema?.json;
-    expect(toolSchema?.required).toContain("unresolved_introduced_topics");
-    expect(
-      toolSchema?.properties?.unresolved_introduced_topics?.description,
-    ).toContain("Mandatory full-transcript audit");
+    expect(toolSchema?.required).toContain("conversation_memory");
+    expect(toolSchema?.properties?.conversation_memory?.description).toContain(
+      "refreshed attention aid",
+    );
     expect(capturedCommand).toMatchObject({
       input: {
         toolConfig: {
@@ -164,7 +173,7 @@ describe("Bedrock conversation formatting", () => {
     });
   });
 
-  it("merges unresolved introduced topics into the durable follow-up ledger", async () => {
+  it("returns refreshed established facts as durable conversation memory", async () => {
     const send = vi.fn(() =>
       Promise.resolve({
         output: {
@@ -179,10 +188,14 @@ describe("Bedrock conversation formatting", () => {
                     referenced_profile_text: null,
                     invalidate_proposed_profile: false,
                     completeness_confidence: "MODERATE",
-                    unresolved_introduced_topics: [
-                      "computer experience introduced earlier still needs follow-up",
-                    ],
                     follow_up_notes: [],
+                    conversation_memory: {
+                      establishedFacts: [
+                        "Worked with computers and electronics.",
+                        "Repaired circuit boards.",
+                      ],
+                      closedTopics: [],
+                    },
                   },
                 },
               },
@@ -205,11 +218,83 @@ describe("Bedrock conversation formatting", () => {
         interviewContext,
       ),
     ).resolves.toMatchObject({
-      completeness_confidence: "LOW",
-      follow_up_notes: [
-        "computer experience introduced earlier still needs follow-up",
-      ],
+      completeness_confidence: "MODERATE",
+      follow_up_notes: [],
+      conversation_memory: {
+        establishedFacts: [
+          "Worked with computers and electronics.",
+          "Repaired circuit boards.",
+        ],
+        closedTopics: [],
+      },
     });
+  });
+
+  it("blocks a repeated question after the member says it was already answered", async () => {
+    const send = vi.fn(() =>
+      Promise.resolve({
+        output: {
+          message: {
+            content: [
+              {
+                toolUse: {
+                  name: "record_interview_decision",
+                  input: {
+                    action: "CONTINUE",
+                    message:
+                      "What projects did you teach, what age groups did you work with, and did you prefer hands-on teaching?",
+                    referenced_profile_text: null,
+                    invalidate_proposed_profile: false,
+                    completeness_confidence: "LOW",
+                    follow_up_notes: [
+                      "projects and age groups still need follow-up",
+                    ],
+                    conversation_memory: {
+                      establishedFacts: [
+                        "Taught printmaking and sculpture to adult learners.",
+                        "Prefers hands-on teaching.",
+                      ],
+                      closedTopics: ["art workshop details"],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const adapter = new BedrockAiAdapter(config, { send } as never);
+
+    const turn = await adapter.interview(
+      [
+        {
+          role: "assistant",
+          content:
+            "What projects did you teach, what age groups did you work with, and did you prefer hands-on teaching?",
+        },
+        {
+          role: "user",
+          content:
+            "I taught printmaking and sculpture to adult learners and preferred hands-on teaching.",
+        },
+        {
+          role: "assistant",
+          content:
+            "What projects did you teach, what age groups did you work with, and did you prefer hands-on teaching?",
+        },
+        { role: "user", content: "I already answered that." },
+      ],
+      interviewContext,
+    );
+
+    expect(turn.action).toBe("CONTINUE");
+    expect(turn.message).toMatch(/you’re right|use what you already shared/iu);
+    expect(turn.message).not.toMatch(/what projects|what age groups/iu);
+    expect(turn.follow_up_notes).toEqual([]);
+    expect(turn.conversation_memory.closedTopics).toContain(
+      "art workshop details",
+    );
   });
 
   it("returns a semantic submission decision with an exact legacy proposal reference", async () => {
@@ -230,6 +315,7 @@ describe("Bedrock conversation formatting", () => {
                     invalidate_proposed_profile: false,
                     completeness_confidence: "HIGH",
                     follow_up_notes: [],
+                    conversation_memory: emptyConversationMemory,
                   },
                 },
               },
@@ -258,6 +344,7 @@ describe("Bedrock conversation formatting", () => {
       invalidate_proposed_profile: false,
       completeness_confidence: "HIGH",
       follow_up_notes: [],
+      conversation_memory: emptyConversationMemory,
     });
   });
 
@@ -277,6 +364,7 @@ describe("Bedrock conversation formatting", () => {
                     invalidate_proposed_profile: false,
                     completeness_confidence: "LOW",
                     follow_up_notes: ["the kind of help they would consider"],
+                    conversation_memory: emptyConversationMemory,
                   },
                 },
               },
@@ -302,6 +390,7 @@ describe("Bedrock conversation formatting", () => {
       invalidate_proposed_profile: false,
       completeness_confidence: "LOW",
       follow_up_notes: ["the kind of help they would consider"],
+      conversation_memory: emptyConversationMemory,
     });
   });
 

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   InterviewCompleteness,
+  InterviewConversationMemory,
   InterviewMessage,
   RerankerOutput,
   SearchPlan,
@@ -13,6 +14,7 @@ import type {
   ProfileDraft,
   RerankCandidate,
 } from "./adapter.js";
+import { honorMemberInterviewDirection } from "./interview-control.js";
 
 function userMessages(messages: readonly InterviewMessage[]): string[] {
   return messages
@@ -38,7 +40,7 @@ const EDUCATION_ROLE =
 const EDUCATION_CONTEXT =
   /\b(?:preschool|elementary|middle school|high school|college|university|adult learners?|grade|grades|students?|math|science|history|language arts|music|art|special education|curriculum)\b/iu;
 const CONTRIBUTION =
-  /\b(?:can|could|would|willing|prefer|enjoy|offer|offers|interested|open to|like to)\b[^.!?]{0,100}\b(?:advise|advice|teach|tutor|mentor|coach|troubleshoot|repair|build|maintain|review|draft|research|plan|organize|lead|manage|facilitate|design|write|translate|cook|serve|perform|coordinate|consult)\w*\b/iu;
+  /\b(?:can|could|would|willing|prefer|enjoy|offer|offers|interested|open to|like to|comfortable|able to)\b[^.!?]{0,100}\b(?:advise|advice|teach|tutor|mentor|coach|troubleshoot|repair|build|maintain|review|draft|research|plan|organize|lead|manage|facilitate|design|write|translate|cook|serve|perform|coordinate|consult|volunteer)\w*\b/iu;
 const CADENCE =
   /\b(?:one[- ]time|occasional(?:ly)?|seasonal(?:ly)?|ongoing|weekly|monthly|regular(?:ly)?|as needed|short[- ]term|long[- ]term|weekends?|weekdays?|evenings?|daytime)\b/iu;
 const BOUNDARY =
@@ -53,6 +55,38 @@ const ELECTRONICS_DETAIL =
   /\b(?:circuits?|circuit boards?|solder(?:ing|ed)?|components?|radios?|test equipment|oscilloscopes?|electronics? repair)\b/iu;
 const PROFILE_DELETION_REQUEST =
   /\b(?:delete|erase|permanently remove)\s+(?:(?:my|this|the)\s+)?(?:(?:entire|whole)\s+)?(?:gifts in service\s+)?(?:profile|account)\b|\bremove\s+(?:(?:my|this|the)\s+)?(?:(?:entire|whole)\s+)?(?:gifts in service\s+)?(?:profile|account)(?:\s+(?:entirely|completely|permanently))?\b/iu;
+const CLOSE_CURRENT_TOPIC =
+  /\b(?:next question|move on|skip (?:that|this|it)|already answered|I (?:already|just) answered|nothing (?:else|more)|that(?:['’]s| is) (?:it|all)|can(?:not|['’]t) think of anything else)\b/iu;
+
+function refreshedConversationMemory(
+  messages: readonly InterviewMessage[],
+  previous: InterviewConversationMemory,
+): InterviewConversationMemory {
+  const latest =
+    [...messages].reverse().find((message) => message.role === "user")
+      ?.content ?? "";
+  const establishedFacts = [
+    ...new Set([
+      ...previous.establishedFacts,
+      ...userMessages(messages)
+        .filter((message) => detectHighRiskInput(message) === null)
+        .map((message) => message.trim().replace(/\s+/gu, " ").slice(0, 240))
+        .filter(
+          (message) =>
+            message.length >= 8 && !CLOSE_CURRENT_TOPIC.test(message),
+        ),
+    ]),
+  ].slice(-16);
+  const closedTopics = CLOSE_CURRENT_TOPIC.test(latest)
+    ? [
+        ...new Set([
+          ...previous.closedTopics,
+          "the topic the member asked to leave or said was complete",
+        ]),
+      ].slice(-8)
+    : previous.closedTopics;
+  return { establishedFacts, closedTopics };
+}
 
 function latestExchange(messages: readonly InterviewMessage[]): {
   question: string;
@@ -81,6 +115,7 @@ function questionOmissionNotes(
   messages: readonly InterviewMessage[],
 ): string[] {
   const { question, answer } = latestExchange(messages);
+  if (CLOSE_CURRENT_TOPIC.test(answer)) return [];
   const asksAboutComputers = COMPUTER_TOPIC.test(question);
   const asksAboutElectronics = ELECTRONICS_TOPIC.test(question);
   if (!asksAboutComputers || !asksAboutElectronics) return [];
@@ -98,6 +133,7 @@ function questionOmissionNotes(
 
 function introducedTopicNotes(messages: readonly InterviewMessage[]): string[] {
   const supplied = userMessages(messages).join(" ");
+  if (CLOSE_CURRENT_TOPIC.test(latestExchange(messages).answer)) return [];
   return [
     ...(COMPUTER_TOPIC.test(supplied) &&
     !COMPUTER_DETAIL.test(supplied) &&
@@ -133,27 +169,32 @@ function assessCoverage(
   const hasBoundary = BOUNDARY.test(source);
   const hasCadenceOrBoundary = hasCadence || hasBoundary;
   const { answer: latestAnswer } = latestExchange(messages);
-  const retainedNotes = previousFollowUpNotes.filter((note) => {
-    const normalized = note.toLocaleLowerCase("en-US");
-    if (normalized.includes("computer"))
-      return (
-        !COMPUTER_DETAIL.test(latestAnswer) &&
-        !explicitlyDeclines(latestAnswer, COMPUTER_TOPIC)
-      );
-    if (normalized.includes("electronic"))
-      return (
-        !ELECTRONICS_DETAIL.test(latestAnswer) &&
-        !explicitlyDeclines(latestAnswer, ELECTRONICS_TOPIC)
-      );
-    if (normalized.includes("kind of help")) return !hasContribution;
-    if (normalized.includes("frequency") || normalized.includes("limit"))
-      return !hasCadenceOrBoundary;
-    if (normalized.includes("context") || normalized.includes("specific"))
-      return !hasContext;
-    if (normalized.includes("skill") || normalized.includes("experience area"))
-      return !hasDomain;
-    return true;
-  });
+  const retainedNotes = CLOSE_CURRENT_TOPIC.test(latestAnswer)
+    ? []
+    : previousFollowUpNotes.filter((note) => {
+        const normalized = note.toLocaleLowerCase("en-US");
+        if (normalized.includes("computer"))
+          return (
+            !COMPUTER_DETAIL.test(source) &&
+            !explicitlyDeclines(supplied, COMPUTER_TOPIC)
+          );
+        if (normalized.includes("electronic"))
+          return (
+            !ELECTRONICS_DETAIL.test(source) &&
+            !explicitlyDeclines(supplied, ELECTRONICS_TOPIC)
+          );
+        if (normalized.includes("kind of help")) return !hasContribution;
+        if (normalized.includes("frequency") || normalized.includes("limit"))
+          return !hasCadenceOrBoundary;
+        if (normalized.includes("context") || normalized.includes("specific"))
+          return !hasContext;
+        if (
+          normalized.includes("skill") ||
+          normalized.includes("experience area")
+        )
+          return !hasDomain;
+        return false;
+      });
   const gaps = [
     ...new Set([
       ...retainedNotes,
@@ -164,7 +205,7 @@ function assessCoverage(
       ...(!hasContribution ? ["the kind of help they would consider"] : []),
       ...(!hasCadenceOrBoundary ? ["frequency or practical limits"] : []),
     ]),
-  ].slice(0, 8);
+  ].slice(0, 4);
   const coreComplete =
     gaps.length === 0 &&
     hasDomain &&
@@ -248,6 +289,10 @@ export class FakeAiAdapter implements AiAdapter {
     const latest =
       [...messages].reverse().find((message) => message.role === "user")
         ?.content ?? "";
+    const conversationMemory = refreshedConversationMemory(
+      messages,
+      context.previousConversationMemory,
+    );
     const safety = detectHighRiskInput(latest);
     if (safety)
       return Promise.resolve({
@@ -257,6 +302,7 @@ export class FakeAiAdapter implements AiAdapter {
         invalidate_proposed_profile: false,
         completeness_confidence: context.previousCompletenessConfidence,
         follow_up_notes: context.previousFollowUpNotes,
+        conversation_memory: context.previousConversationMemory,
       });
     if (PROFILE_DELETION_REQUEST.test(latest))
       return Promise.resolve({
@@ -267,6 +313,7 @@ export class FakeAiAdapter implements AiAdapter {
         invalidate_proposed_profile: true,
         completeness_confidence: context.previousCompletenessConfidence,
         follow_up_notes: context.previousFollowUpNotes,
+        conversation_memory: conversationMemory,
       });
     if (
       context.hasProposedProfile &&
@@ -281,6 +328,7 @@ export class FakeAiAdapter implements AiAdapter {
         invalidate_proposed_profile: false,
         completeness_confidence: context.previousCompletenessConfidence,
         follow_up_notes: context.previousFollowUpNotes,
+        conversation_memory: conversationMemory,
       });
     const coverage = assessCoverage(
       messages,
@@ -295,26 +343,38 @@ export class FakeAiAdapter implements AiAdapter {
         latest,
       )
     )
-      return Promise.resolve({
-        action: "PROPOSE_PROFILE",
-        message: "I will prepare the proposed profile.",
-        referenced_profile_text: null,
-        invalidate_proposed_profile: false,
-        completeness_confidence: coverage.confidence,
-        follow_up_notes: coverage.gaps,
-      });
-    return Promise.resolve({
-      action: "CONTINUE",
-      message: nextInterviewQuestion(messages, coverage),
-      referenced_profile_text: null,
-      invalidate_proposed_profile:
-        context.hasProposedProfile &&
-        !/\b(?:how|where|what happens)\b[^.!?]{0,80}\b(?:submit|save|approve|profile)\b/iu.test(
-          latest,
+      return Promise.resolve(
+        honorMemberInterviewDirection(
+          {
+            action: "PROPOSE_PROFILE",
+            message: "I will prepare the proposed profile.",
+            referenced_profile_text: null,
+            invalidate_proposed_profile: false,
+            completeness_confidence: coverage.confidence,
+            follow_up_notes: coverage.gaps,
+            conversation_memory: conversationMemory,
+          },
+          messages,
         ),
-      completeness_confidence: coverage.confidence,
-      follow_up_notes: coverage.gaps,
-    });
+      );
+    return Promise.resolve(
+      honorMemberInterviewDirection(
+        {
+          action: "CONTINUE",
+          message: nextInterviewQuestion(messages, coverage),
+          referenced_profile_text: null,
+          invalidate_proposed_profile:
+            context.hasProposedProfile &&
+            !/\b(?:how|where|what happens)\b[^.!?]{0,80}\b(?:submit|save|approve|profile)\b/iu.test(
+              latest,
+            ),
+          completeness_confidence: coverage.confidence,
+          follow_up_notes: coverage.gaps,
+          conversation_memory: conversationMemory,
+        },
+        messages,
+      ),
+    );
   }
 
   async draft(

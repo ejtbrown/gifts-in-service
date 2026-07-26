@@ -1,9 +1,11 @@
 import {
+  interviewConversationMemorySchema,
   interviewCompletenessSchema,
   interviewFollowUpNotesSchema,
   interviewMessageSchema,
   profileTextSchema,
   type InterviewCompleteness,
+  type InterviewConversationMemory,
   type InterviewFollowUpNotes,
   type InterviewMessage,
   type ProfileStatus,
@@ -46,6 +48,7 @@ export interface PendingInterview {
   proposedProfile: string | null;
   completenessConfidence: InterviewCompleteness;
   followUpNotes: InterviewFollowUpNotes;
+  conversationMemory: InterviewConversationMemory;
   revision: number;
   startedAt: Date;
   updatedAt: Date;
@@ -62,6 +65,10 @@ function pendingMessages(value: string): InterviewMessage[] {
 
 function pendingFollowUpNotes(value: string): InterviewFollowUpNotes {
   return interviewFollowUpNotesSchema.parse(JSON.parse(value));
+}
+
+function pendingConversationMemory(value: string): InterviewConversationMemory {
+  return interviewConversationMemorySchema.parse(JSON.parse(value));
 }
 
 export class Repository {
@@ -231,6 +238,7 @@ export class Repository {
         proposed_profile: string | null;
         completeness_confidence: string;
         follow_up_notes_json: string;
+        conversation_memory_json: string;
         revision: number;
         started_at: Date;
         updated_at: Date;
@@ -238,6 +246,7 @@ export class Repository {
       }>(
         `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
                 follow_up_notes::text AS follow_up_notes_json,
+                conversation_memory::text AS conversation_memory_json,
                 revision, started_at, updated_at, expires_at
          FROM pending_interviews
          WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
@@ -252,6 +261,9 @@ export class Repository {
           row.completeness_confidence,
         ),
         followUpNotes: pendingFollowUpNotes(row.follow_up_notes_json),
+        conversationMemory: pendingConversationMemory(
+          row.conversation_memory_json,
+        ),
         revision: row.revision,
         startedAt: row.started_at,
         updatedAt: row.updated_at,
@@ -269,6 +281,7 @@ export class Repository {
       proposed_profile: string | null;
       completeness_confidence: string;
       follow_up_notes_json: string;
+      conversation_memory_json: string;
       revision: number;
       started_at: Date;
       updated_at: Date;
@@ -276,6 +289,7 @@ export class Repository {
     }>(
       `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
               follow_up_notes::text AS follow_up_notes_json,
+              conversation_memory::text AS conversation_memory_json,
               revision, started_at, updated_at, expires_at
        FROM pending_interviews
        WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
@@ -290,6 +304,9 @@ export class Repository {
             row.completeness_confidence,
           ),
           followUpNotes: pendingFollowUpNotes(row.follow_up_notes_json),
+          conversationMemory: pendingConversationMemory(
+            row.conversation_memory_json,
+          ),
           revision: row.revision,
           startedAt: row.started_at,
           updatedAt: row.updated_at,
@@ -304,6 +321,7 @@ export class Repository {
     messages: readonly InterviewMessage[];
     completenessConfidence: InterviewCompleteness;
     followUpNotes: readonly string[];
+    conversationMemory: InterviewConversationMemory;
     proposedProfile?: string | null;
     now: Date;
   }): Promise<number | null> {
@@ -318,12 +336,16 @@ export class Repository {
     const followUpNotes = interviewFollowUpNotesSchema.parse(
       input.followUpNotes,
     );
+    const conversationMemory = interviewConversationMemorySchema.parse(
+      input.conversationMemory,
+    );
     const result = await this.executor.query<{ revision: number }>(
       `UPDATE pending_interviews
        SET messages = $3::jsonb,
            proposed_profile = CASE WHEN $5::boolean THEN $6::text ELSE proposed_profile END,
            completeness_confidence = $7,
            follow_up_notes = $8::jsonb,
+           conversation_memory = $9::jsonb,
            revision = revision + 1,
            updated_at = $4::timestamptz
        WHERE person_id = $1::uuid AND revision = $2 AND expires_at > $4::timestamptz
@@ -337,6 +359,7 @@ export class Repository {
         proposedProfile,
         completenessConfidence,
         JSON.stringify(followUpNotes),
+        JSON.stringify(conversationMemory),
       ],
     );
     return result.rows[0]?.revision ?? null;
