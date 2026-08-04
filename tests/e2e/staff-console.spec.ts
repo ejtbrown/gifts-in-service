@@ -70,7 +70,7 @@ test("administrator sees volunteer, lifecycle, audit, and access controls but no
     navigation.getByRole("link", { name: "Volunteer records" }),
   ).toBeVisible();
   await expect(
-    navigation.getByRole("link", { name: "Lifecycle exceptions" }),
+    navigation.getByRole("link", { name: "Profile maintenance" }),
   ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Audit" })).toBeVisible();
   await expect(
@@ -130,7 +130,7 @@ test("search-only staff see the query control and no administrative navigation",
   const result = page.getByRole("article");
   await expect(result.getByText("MEDIUM", { exact: true })).toBeVisible();
   await expect(
-    result.getByText("Deterministic explanation", { exact: true }),
+    result.getByText("Fixed-rule explanation", { exact: true }),
   ).toBeVisible();
   await expect(result.getByText(evidence, { exact: true })).toBeVisible();
   await expect(result.getByText(approvedText, { exact: true })).toBeHidden();

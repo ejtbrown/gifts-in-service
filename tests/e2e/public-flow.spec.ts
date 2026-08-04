@@ -362,6 +362,43 @@ test("landing disclosure is present before identity fields and request response 
   ).toBeVisible();
 });
 
+test("necessary technical terms open keyboard-accessible plain-language explanations", async ({
+  page,
+}) => {
+  await page.goto("/ai-use");
+  const aiTerm = page.getByRole("button", {
+    name: "Artificial intelligence (AI)",
+  });
+  await aiTerm.click();
+  const aiExplanation = page.getByRole("dialog", {
+    name: "Artificial intelligence (AI)",
+  });
+  await expect(aiExplanation).toBeVisible();
+  await expect(aiExplanation).toContainText(
+    "It is a tool, not a person, and it does not understand or judge you the way a person does.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(aiExplanation).not.toBeVisible();
+  await expect(aiTerm).toBeFocused();
+
+  await page.goto("/privacy");
+  const providerTerm = page.getByRole("button", {
+    name: "Amazon Web Services (AWS)",
+  });
+  await providerTerm.click();
+  const providerExplanation = page.getByRole("dialog", {
+    name: "Amazon Web Services (AWS)",
+  });
+  await expect(providerExplanation).toContainText(
+    "the outside technology company that runs the secure computers, database, email, sign-in, computer assistant, and search tools",
+  );
+  await providerExplanation
+    .getByRole("button", { name: "Close explanation" })
+    .click();
+  await expect(providerExplanation).not.toBeVisible();
+  await expect(providerTerm).toBeFocused();
+});
+
 test("magic page redeems automatically, removes its fragment, and refuses a missing token", async ({
   page,
 }) => {
@@ -375,7 +412,7 @@ test("magic page redeems automatically, removes its fragment, and refuses a miss
   await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
   await page.reload();
   await expect(
-    page.getByText("The link did not contain a token. Request a new link."),
+    page.getByText("This secure link is incomplete. Request a new link."),
   ).toBeVisible();
 });
 

@@ -29,3 +29,21 @@ test("@a11y confirmation actions use the exact required labels", async ({
     "dangerouslySetInnerHTML",
   );
 });
+
+test("@a11y plain-language explanation popup has no automatically detectable serious violations", async ({
+  page,
+}) => {
+  await page.goto("/ai-use");
+  await page
+    .getByRole("button", { name: "Artificial intelligence (AI)" })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Artificial intelligence (AI)" }),
+  ).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((violation) =>
+      ["serious", "critical"].includes(violation.impact ?? ""),
+    ),
+  ).toEqual([]);
+});

@@ -1,4 +1,5 @@
 import { useConfig } from "./context.js";
+import { PlainLanguageTerm } from "./components.js";
 
 interface PolicyContentProps {
   sectionHeadingLevel?: "h2" | "h3";
@@ -12,35 +13,60 @@ export function PrivacyNoticeContent({
   return (
     <>
       <p>
-        Gifts in Service collects a display name, verified email associations,
-        pending interview questions and answers, temporary conversation memory
-        of established facts and topics the person closed, optional follow-up
-        notes, exact volunteer profile prose that a person reviews and approves,
-        an embedding made only from that prose, consent and lifecycle
-        timestamps, authentication records, deliverability state, and narrow
-        security/audit events. It is for adults age 18 or older; it does not
-        collect a date of birth.
+        Gifts in Service keeps only the information needed to create and manage
+        a volunteer profile. This includes your display name, verified email
+        addresses, unfinished conversation with the assistant, the exact profile
+        you approve, and a computer-generated search aid made only from that
+        approved profile. It also keeps dates showing your agreement and profile
+        status, whether email was delivered, and limited records needed for
+        sign-in, security, and accountability.
+      </p>
+      <p>
+        Gifts in Service is for adults age 18 or older. It asks you to confirm
+        that you are an adult, but it does not ask for your birth date or exact
+        age.
       </p>
       <Heading>Purpose and viewers</Heading>
       <p>
-        Authorized church staff and designated ministry leaders use active
-        profiles only to identify and contact possible volunteers. The
-        information is not a public or member directory and is not used for
-        marketing, fundraising, autonomous outreach, spiritual-value ranking, or
-        automatic assignment.
+        Church staff and ministry leaders with permission may use active
+        profiles only to identify and contact possible volunteers. Profiles are
+        not public and are not a directory for church members. They are not used
+        for marketing, fundraising, ranking a person's value or faith, sending
+        messages without a person involved, or automatically assigning anyone to
+        serve.
       </p>
-      <Heading>AI and AWS processing</Heading>
+      <Heading>How the online service and computer assistant work</Heading>
       <p>
-        AWS services process the active interview, approved profile, and staff
-        search request. Unfinished interview questions and answers, temporary
-        conversation memory, and optional follow-up notes are stored in the
-        encrypted application database for up to 30 days so a member can resume
-        without the assistant losing earlier answers. They are available only
-        through that member's authenticated profile session, are never included
-        in analytics, logs, traces, staff search, or error reporting, and are
-        deleted when the profile is approved or the 30-day period ends.
-        Production is blocked unless the church confirms zero-retention and
-        disabled model-invocation body logging for this workload.
+        <PlainLanguageTerm
+          title="Amazon Web Services (AWS)"
+          explanation="Amazon Web Services is the outside technology company that runs the secure computers, database, email, sign-in, computer assistant, and search tools used by Gifts in Service."
+        >
+          Amazon Web Services (AWS)
+        </PlainLanguageTerm>{" "}
+        runs the online service, computer assistant, and search tools. It
+        processes the current conversation, an approved profile, or a staff
+        search only when needed to provide that feature.
+      </p>
+      <p>
+        Unfinished questions and answers, the latest draft, and short notes that
+        help the assistant remember what you have already said are saved in an{" "}
+        <PlainLanguageTerm
+          title="Encryption"
+          explanation="Encryption scrambles stored information. People or systems without the right digital key cannot read it."
+        >
+          encrypted
+        </PlainLanguageTerm>{" "}
+        database for no more than 30 days. This lets you return without starting
+        over. Through Gifts in Service, only you can reach this information
+        after securely signing in to your profile. It is not available in staff
+        search or site-use tracking, and the application does not put it in its
+        logs or error reports. It is deleted when you approve your profile or
+        when the 30 days end.
+      </p>
+      <p>
+        Before the church launches the service, it must confirm that the company
+        providing the computer assistant will not keep these conversations or
+        record their contents in its service logs.
       </p>
       <Heading>Self-reported information</Heading>
       <p>
@@ -52,14 +78,20 @@ export function PrivacyNoticeContent({
       <Heading>Control and retention</Heading>
       <p>
         A person can view, update, reconfirm, pause, reactivate, or permanently
-        delete their profile and manage verified emails. A pending interview is
-        deleted on profile approval or 30 days after it begins, whichever comes
-        first. Reminders begin after 52 weeks; a profile is hidden at 58 weeks
-        and purged at 62 weeks without reconfirmation. Deletion removes live
-        profile/contact/session/token/interview data in one purge operation.
-        Minimal pseudonymous security events remain. Deleted or expired data may
-        remain in encrypted backups until rotation, normally no more than 35
-        days in production, and is unavailable to normal application users.
+        delete their profile and manage verified email addresses. An unfinished
+        conversation is deleted when the profile is approved or 30 days after
+        the conversation starts, whichever happens first.
+      </p>
+      <p>
+        The service asks once a year whether the profile is still correct. If
+        the person does not respond, the profile is hidden from search after 58
+        weeks and permanently deleted after 62 weeks. A deletion removes the
+        profile, contact information, signed-in devices, sign-in links, and
+        unfinished conversation from the working service. A small security
+        record may remain, but it does not contain the person's name, email, or
+        profile. Protected backup copies may contain deleted information for up
+        to 35 more days. Those copies are not available through the normal
+        service and are removed as old backups expire.
       </p>
       <Heading>Contact</Heading>
       <p>
@@ -71,10 +103,10 @@ export function PrivacyNoticeContent({
       </p>
       <p>
         <strong>
-          This draft does not assert compliance with any named law.
+          This draft does not claim compliance with any particular law.
         </strong>{" "}
-        Church leadership and Texas counsel must review it before production
-        use.
+        Church leaders and a Texas lawyer must review it before the service is
+        used with real member information.
       </p>
     </>
   );
@@ -83,7 +115,7 @@ export function PrivacyNoticeContent({
 export function PrivacyPage() {
   return (
     <article className="policy narrow">
-      <p className="eyebrow">Draft · legal review required</p>
+      <p className="eyebrow">Draft · church and legal review required</p>
       <h1>Privacy Notice</h1>
       <PrivacyNoticeContent />
     </article>
@@ -97,42 +129,60 @@ export function AiUseContent({
   return (
     <>
       <p>
-        AI asks adaptive questions and prepares a draft from what you say. You
-        may answer one piece at a time. The assistant uses a temporary broad
-        completeness level to decide when to ask follow-up questions and when to
-        offer to wrap up; it is not a suitability score or a staff-search field.
-        You see the entire proposed profile and nothing is saved until you
-        select <strong>Approve and Save</strong> or{" "}
+        <PlainLanguageTerm
+          title="Artificial intelligence (AI)"
+          explanation="Artificial intelligence, or AI, is software that uses patterns from examples to create text or make suggestions. It is a tool, not a person, and it does not understand or judge you the way a person does."
+        >
+          Artificial intelligence (AI)
+        </PlainLanguageTerm>{" "}
+        asks questions based on what you have already said and prepares a draft
+        in your own words. You may answer one piece at a time. The assistant
+        keeps a simple progress estimate to decide whether another question
+        would help or whether it can offer to finish. That estimate is not a
+        rating of you, is never shown to staff, and is never used in staff
+        search.
+      </p>
+      <p>
+        You see the entire proposed profile before it is saved. Nothing becomes
+        your profile until you select <strong>Approve and Save</strong> or{" "}
         <strong>Submit profile</strong>, or clearly ask the assistant to submit
-        that proposal. The exact approved text—not a hidden list of inferred
-        skills—is the authoritative record.
+        the proposal shown to you. The exact words you approve are the official
+        saved profile. The service does not keep a hidden list of skills it
+        guessed about you.
       </p>
       <Heading>What is kept temporarily</Heading>
       <p>
         Unfinished interview questions and answers, the latest proposal, the
-        broad completeness level, temporary memory of facts you established and
-        topics you closed, and optional follow-up notes are saved in the
-        encrypted application database for up to 30 days so you can return after
-        closing the page or requesting a new magic link. They are deleted when
-        you approve and save the profile or when the 30-day period ends. They
-        are not searchable by staff or used as suitability scores. The system
-        does not use Bedrock Agents, Knowledge Bases, or stateful model
-        sessions.
+        simple progress estimate, and short notes that help the assistant
+        remember what you said or chose to skip are saved in an{" "}
+        <PlainLanguageTerm
+          title="Encryption"
+          explanation="Encryption scrambles stored information. People or systems without the right digital key cannot read it."
+        >
+          encrypted
+        </PlainLanguageTerm>{" "}
+        database for no more than 30 days. This lets you return after closing
+        the page or requesting a new sign-in email. Through Gifts in Service,
+        only you can reach this unfinished conversation after securely signing
+        in. Staff cannot search it or use it to rate you. It is deleted when you
+        approve and save the profile or when the 30 days end.
       </p>
-      <Heading>Search</Heading>
+      <Heading>How staff search works</Heading>
       <p>
-        Staff searches use full-text and semantic retrieval, then AI may explain
-        why bounded candidate prose relates to a request. Names and contact
-        details are not sent to embedding or reranking models. Evidence must be
-        copied exactly from approved prose; invalid output falls back to
-        deterministic ordering.
+        When staff search, the service looks for exact words, related meanings,
+        and close spellings only in approved profiles. AI may then reorder those
+        possible matches and explain why a profile may fit the request. Names
+        and contact details are not sent to the AI search tool. Every
+        explanation must use exact words from the approved profile. If the AI
+        gives an unusable answer, the service uses fixed non-AI rules instead.
       </p>
       <Heading>Limits</Heading>
       <p>
         AI can be wrong. It cannot verify credentials, licensing, safety,
         willingness, background screening, or availability, and it does not
-        assign volunteers. Deterministic validation and an AWS guardrail reduce
-        sensitive-data risk but cannot make it zero.
+        assign volunteers. Software checks and safety filters reduce the chance
+        of accepting sensitive information or showing an unsupported answer, but
+        no filter is perfect.
       </p>
     </>
   );
