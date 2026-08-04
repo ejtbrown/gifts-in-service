@@ -412,7 +412,7 @@ test("magic page redeems automatically, removes its fragment, and refuses a miss
   await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
   await page.reload();
   await expect(
-    page.getByText("The link did not contain a token. Request a new link."),
+    page.getByText("This secure link is incomplete. Request a new link."),
   ).toBeVisible();
 });
 
