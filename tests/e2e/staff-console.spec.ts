@@ -158,12 +158,29 @@ test("privacy auditors and technical administrators see only their own consoles"
 }) => {
   await mockStaff(page, ["gis-privacy-auditor"], ["audit:read"]);
   await page.route("**/api/staff/audit", async (route) => {
-    await route.fulfill({ status: 200, json: { events: [] } });
+    await route.fulfill({
+      status: 200,
+      json: {
+        events: [
+          {
+            id: "90000000-0000-4000-8000-000000000001",
+            occurred_at: "2026-08-03T15:00:00.000Z",
+            action: "PROFILE_OPEN",
+            actor_username: "auditor@example.invalid",
+            succeeded: true,
+          },
+        ],
+      },
+    });
   });
   await page.goto("/staff/audit");
   let navigation = page.getByRole("navigation", { name: "Staff console" });
   await expect(navigation.getByRole("link")).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "Audit" })).toBeVisible();
+  await expect(
+    page.locator("thead").getByText("Actor username", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("auditor@example.invalid")).toBeVisible();
 
   await page.unroute("**/api/staff/me");
   await mockStaff(page, ["gis-technical-admin"], ["technical:read"]);

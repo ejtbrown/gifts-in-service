@@ -1407,6 +1407,26 @@ describe("public/member API security flow", () => {
           ?.groups,
       ).toEqual(["gis-ministry-leader"]);
 
+      const audit = await cognitoApp.inject({
+        method: "GET",
+        url: "/api/staff/audit",
+        headers: { cookie: adminCookie },
+      });
+      expect(audit.statusCode).toBe(200);
+      const inviteAudit = audit
+        .json<{
+          events: {
+            action: string;
+            actor_username: string;
+            actor_id?: string;
+          }[];
+        }>()
+        .events.find((event) => event.action === "STAFF_INVITE");
+      expect(inviteAudit).toMatchObject({
+        actor_username: "admin@example.invalid",
+      });
+      expect(inviteAudit).not.toHaveProperty("actor_id");
+
       const lowerSubject = "30000000-0000-4000-8000-000000000002";
       const groupsChanged = await cognitoApp.inject({
         method: "POST",

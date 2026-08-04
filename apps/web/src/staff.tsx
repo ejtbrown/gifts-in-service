@@ -1246,7 +1246,7 @@ export function AuditPage() {
       id: string;
       occurred_at: string;
       action: string;
-      actor_id: string;
+      actor_username: string;
       succeeded: boolean;
     }[]
   >([]);
@@ -1258,7 +1258,7 @@ export function AuditPage() {
         id: string;
         occurred_at: string;
         action: string;
-        actor_id: string;
+        actor_username: string;
         succeeded: boolean;
       }[];
     }>("/api/staff/audit")
@@ -1281,8 +1281,9 @@ export function AuditPage() {
       <p className="eyebrow">Accountability controls</p>
       <h1>Privacy and lifecycle audit</h1>
       <p>
-        Profile prose and contact details are intentionally absent. Raw staff
-        query text is separately protected and expires after 90 days.
+        Member profile prose and member contact details are intentionally
+        absent. Staff actor usernames are resolved from Cognito. Raw staff query
+        text is separately protected and expires after 90 days.
       </p>
       {error && (
         <Notice tone="warning">
@@ -1295,7 +1296,7 @@ export function AuditPage() {
             <tr>
               <th>Time</th>
               <th>Action</th>
-              <th>Actor</th>
+              <th>Actor username</th>
               <th>Result</th>
             </tr>
           </thead>
@@ -1304,7 +1305,7 @@ export function AuditPage() {
               <tr key={event.id}>
                 <td>{formatDateTime(event.occurred_at)}</td>
                 <td>{event.action}</td>
-                <td>{event.actor_id}</td>
+                <td>{event.actor_username}</td>
                 <td>{event.succeeded ? "Succeeded" : "Failed"}</td>
               </tr>
             ))}
