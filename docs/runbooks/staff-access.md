@@ -15,6 +15,10 @@ user's effective permissions:
 | `gis-privacy-auditor` | PII-minimized privacy and lifecycle audit only                                                                                                                                |
 | `gis-technical-admin` | Non-PII technical health only                                                                                                                                                 |
 
+The audit listing resolves each internal Cognito subject to its current email
+address when the page loads. Audit events continue to retain only the stable
+subject identifier; deleted Cognito users appear as `Former staff account`.
+
 Administrators may invite native users directly into one or more of the three
 lower-privilege groups, update those group memberships, revoke sessions,
 disable and re-enable accounts, and permanently delete accounts. The UI and API

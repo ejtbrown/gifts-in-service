@@ -200,6 +200,23 @@ function hasProtectedStaffGroup(groups: readonly string[]): boolean {
   );
 }
 
+function cognitoAttribute(user: UserType, name: string): string | undefined {
+  return user.Attributes?.find((attribute) => attribute.Name === name)?.Value;
+}
+
+function auditActorUsername(input: {
+  actorType: string;
+  actorId: string;
+  resolvedUsername: string | undefined;
+  localDevelopment: boolean;
+}): string {
+  if (input.resolvedUsername) return input.resolvedUsername;
+  if (input.actorType !== "STAFF") return input.actorType;
+  if (input.localDevelopment && input.actorId.startsWith("fake:"))
+    return `Local ${input.actorId.slice("fake:".length).replaceAll("+", ", ")}`;
+  return "Former staff account";
+}
+
 export interface AppDependencies {
   config: AppConfig;
   executor: SqlExecutor;
@@ -373,6 +390,22 @@ export async function buildApp(
       region: config.AWS_REGION,
       maxAttempts: 3,
     });
+  async function listCognitoUsers(): Promise<UserType[]> {
+    const users: UserType[] = [];
+    let paginationToken: string | undefined;
+    do {
+      const listed = await cognito.send(
+        new ListUsersCommand({
+          UserPoolId: config.COGNITO_USER_POOL_ID,
+          Limit: 60,
+          ...(paginationToken ? { PaginationToken: paginationToken } : {}),
+        }),
+      );
+      users.push(...(listed.Users ?? []));
+      paginationToken = listed.PaginationToken;
+    } while (paginationToken && users.length < 600);
+    return users;
+  }
   async function cognitoAccessTarget(
     subject: string,
   ): Promise<{ username: string; groups: string[] } | null> {
@@ -1801,12 +1834,42 @@ export async function buildApp(
   app.get("/api/staff/audit", async (request, reply) => {
     const session = await staffSession(request, reply, "audit:read");
     if (!session) return;
-    const result = await executor.query(
+    const result = await executor.query<{
+      id: string;
+      actor_type: string;
+      actor_id: string;
+      effective_roles: string[];
+      action: string;
+      target_uuid: string | null;
+      occurred_at: Date;
+      correlation_id: string;
+      result_uuids: string[];
+      succeeded: boolean;
+      metadata: Record<string, unknown>;
+    }>(
       `SELECT id::text, actor_type, actor_id, effective_roles, action, target_uuid::text,
         occurred_at, correlation_id::text, result_uuids::text, succeeded, metadata
        FROM audit_events ORDER BY occurred_at DESC LIMIT 200`,
     );
-    return { events: result.rows };
+    const usernamesBySubject = new Map<string, string>();
+    if (config.STAFF_AUTH_ADAPTER === "cognito") {
+      for (const user of await listCognitoUsers()) {
+        const subject = cognitoAttribute(user, "sub");
+        const username = cognitoAttribute(user, "email") ?? user.Username;
+        if (subject && username) usernamesBySubject.set(subject, username);
+      }
+    }
+    return {
+      events: result.rows.map(({ actor_id: actorId, ...event }) => ({
+        ...event,
+        actor_username: auditActorUsername({
+          actorType: event.actor_type,
+          actorId,
+          resolvedUsername: usernamesBySubject.get(actorId),
+          localDevelopment: config.STAFF_AUTH_ADAPTER === "fake",
+        }),
+      })),
+    };
   });
 
   app.get("/api/staff/access", async (request, reply) => {
@@ -1814,21 +1877,8 @@ export async function buildApp(
     if (!session) return;
     if (config.STAFF_AUTH_ADAPTER !== "cognito")
       return { users: [], localDevelopment: true };
-    const listedUsers: UserType[] = [];
-    let paginationToken: string | undefined;
-    do {
-      const listed = await cognito.send(
-        new ListUsersCommand({
-          UserPoolId: config.COGNITO_USER_POOL_ID,
-          Limit: 60,
-          ...(paginationToken ? { PaginationToken: paginationToken } : {}),
-        }),
-      );
-      listedUsers.push(...(listed.Users ?? []));
-      paginationToken = listed.PaginationToken;
-    } while (paginationToken && listedUsers.length < 600);
     const users = await Promise.all(
-      listedUsers.map(async (user) => {
+      (await listCognitoUsers()).map(async (user) => {
         const username = user.Username ?? "";
         const memberships = username
           ? await cognito.send(
@@ -1839,12 +1889,8 @@ export async function buildApp(
             )
           : { Groups: [] };
         return {
-          subject:
-            user.Attributes?.find((attribute) => attribute.Name === "sub")
-              ?.Value ?? "",
-          email:
-            user.Attributes?.find((attribute) => attribute.Name === "email")
-              ?.Value ?? "",
+          subject: cognitoAttribute(user, "sub") ?? "",
+          email: cognitoAttribute(user, "email") ?? "",
           enabled: user.Enabled ?? false,
           status: user.UserStatus ?? "UNKNOWN",
           groups: (memberships.Groups ?? [])
