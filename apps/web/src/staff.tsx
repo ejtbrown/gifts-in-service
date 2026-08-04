@@ -178,7 +178,7 @@ function StaffNavigation({ me }: { me: StaffMe }) {
     {
       permission: "lifecycle:read",
       to: "/staff/lifecycle",
-      label: "Lifecycle exceptions",
+      label: "Profile maintenance",
     },
     {
       permission: "audit:read",
@@ -460,9 +460,10 @@ export function StaffLandingPage() {
         <p className="eyebrow">Authorized workforce access</p>
         <h1>Staff sign in</h1>
         <p>
-          Sign in with your church staff account. Cognito verifies your password
-          and authenticator code without taking you away from this page. Gifts
-          in Service does not store your password.
+          Sign in with your church staff account. The secure staff account
+          service checks your password and authenticator-app code without taking
+          you away from this page. Gifts in Service does not store your
+          password.
         </p>
         {error && (
           <Notice tone="warning">
@@ -648,9 +649,9 @@ export function StaffLandingPage() {
       <p className="eyebrow">Authorized workforce access</p>
       <h1>Staff sign in</h1>
       <p>
-        Production uses an in-page Cognito sign-in with TOTP MFA. The choices
-        below are clearly marked local-development role simulations and are
-        disabled by production configuration.
+        The live service uses a same-page staff sign-in with an
+        authenticator-app code. The choices below are test accounts for local
+        development and are disabled in the live service.
       </p>
       {error && (
         <Notice tone="warning">
@@ -787,7 +788,7 @@ export function StaffSearchPage() {
                 <span>
                   {result.explanationGeneratedByAi
                     ? "AI-generated explanation"
-                    : "Deterministic explanation"}
+                    : "Fixed-rule explanation"}
                 </span>
               </div>
               <p className="reason">{result.reason}</p>
@@ -1167,7 +1168,7 @@ export function LifecyclePage() {
         setError(
           caught instanceof Error
             ? caught.message
-            : "Lifecycle exceptions could not be loaded.",
+            : "Profile reminder and deletion issues could not be loaded.",
         ),
       );
   }, [me]);
@@ -1176,13 +1177,13 @@ export function LifecyclePage() {
   if (!me) return <Loading message="Checking staff access…" />;
   if (!me.permissions.includes("lifecycle:read"))
     return (
-      <AccessDenied message="This role cannot view lifecycle exceptions." />
+      <AccessDenied message="This role cannot view profile maintenance issues." />
     );
   return (
     <div>
       <StaffNavigation me={me} />
       <p className="eyebrow">Administrator controls</p>
-      <h1>Lifecycle exceptions</h1>
+      <h1>Profile reminder and deletion issues</h1>
       <p>
         These records have no verified, deliverable email address. Automated
         reminders cannot reach them, so an administrator should review the
@@ -1195,7 +1196,7 @@ export function LifecyclePage() {
       )}
       {!error && exceptions.length === 0 && (
         <Notice tone="success">
-          <p>No lifecycle delivery exceptions need attention.</p>
+          <p>No profile reminder or deletion issues need attention.</p>
         </Notice>
       )}
       {exceptions.length > 0 && (
@@ -1207,7 +1208,7 @@ export function LifecyclePage() {
                 <th>Status</th>
                 <th>Verified addresses</th>
                 <th>Last verified</th>
-                <th>Scheduled purge</th>
+                <th>Scheduled permanent deletion</th>
                 <th>
                   <span className="visually-hidden">Actions</span>
                 </th>
@@ -1279,11 +1280,11 @@ export function AuditPage() {
     <div>
       <StaffNavigation me={me} />
       <p className="eyebrow">Accountability controls</p>
-      <h1>Privacy and lifecycle audit</h1>
+      <h1>Privacy and profile-history audit</h1>
       <p>
-        Member profile prose and member contact details are intentionally
-        absent. Staff actor usernames are resolved from Cognito. Raw staff query
-        text is separately protected and expires after 90 days.
+        Member profile text and contact details are intentionally absent. Staff
+        usernames come from the current staff account directory. The exact text
+        of staff searches is protected separately and deleted after 90 days.
       </p>
       {error && (
         <Notice tone="warning">
@@ -1499,7 +1500,7 @@ export function StaffAccessPage() {
             ? "Staff user disabled and signed out."
             : action === "enable"
               ? "Staff user enabled."
-              : "Application and Cognito sessions revoked.",
+              : "Staff user signed out on every device.",
       );
       await refresh();
     } catch (caught) {
@@ -1514,13 +1515,13 @@ export function StaffAccessPage() {
   return (
     <div>
       <StaffNavigation me={me} />
-      <p className="eyebrow">Cognito access administration</p>
+      <p className="eyebrow">Staff account administration</p>
       <h1>Staff access</h1>
       <p>
         Invite, assign roles, disable, re-enable, sign out, or delete
         lower-privilege staff accounts. Administrator and
-        technical-administrator access requires the documented AWS-authorized
-        process and cannot be changed here.
+        technical-administrator access requires the documented high-privilege
+        approval process and cannot be changed here.
       </p>
       {notice && (
         <Notice>
@@ -1556,7 +1557,7 @@ export function StaffAccessPage() {
         >
           {busyAction === "invite"
             ? "Sending invitation…"
-            : "Send Cognito invitation"}
+            : "Send staff invitation"}
         </button>
       </form>
       <div className="result-grid">
@@ -1584,7 +1585,7 @@ export function StaffAccessPage() {
                 <Notice>
                   <p>
                     High-privilege access is read-only here and must be managed
-                    through the AWS-authorized process.
+                    through the documented approval process.
                   </p>
                 </Notice>
               ) : (

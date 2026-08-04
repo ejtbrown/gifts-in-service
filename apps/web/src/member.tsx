@@ -65,9 +65,9 @@ export function LandingPage() {
           <h1 id="landing-title">Share your gifts, in your own words</h1>
           <div className="heading-accent" aria-hidden="true" />
           <p className="lede">
-            A short AI-assisted conversation helps you create a profile that you
-            review before anything is saved. You can always decline a future
-            request.
+            A short guided conversation with a computer assistant helps you
+            create a profile. You review the entire profile before it is saved,
+            and you can always decline a future request.
           </p>
           <div className="service-note">
             <span aria-hidden="true">♡</span>
@@ -188,9 +188,7 @@ export function MagicPage() {
   const token = useRef(fragmentToken());
   const started = useRef(false);
   const [error, setError] = useState(
-    token.current
-      ? ""
-      : "The link did not contain a token. Request a new link.",
+    token.current ? "" : "This secure link is incomplete. Request a new link.",
   );
   useEffect(() => {
     if (started.current || !token.current) return;
@@ -859,7 +857,7 @@ export function InterviewPage() {
     <div className="chat-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Private active-session conversation</p>
+          <p className="eyebrow">Private conversation</p>
           <h1>
             {currentProfile
               ? "Update your profile"
@@ -1249,7 +1247,7 @@ export function EmailManagementPage() {
 export function VerifyEmailPage() {
   const token = useRef(fragmentToken());
   const [status, setStatus] = useState(
-    token.current ? "" : "This link is missing its private token.",
+    token.current ? "" : "This secure link is incomplete.",
   );
   async function verify(): Promise<void> {
     try {
@@ -1334,10 +1332,11 @@ export function DeletePage() {
       <h1>Permanently delete your profile</h1>
       <Notice tone="warning">
         <p>
-          This immediately removes the live profile, embedding, contact
-          associations, sessions, and pending tokens. A minimal pseudonymous
-          purge event remains. Encrypted backups expire on their rotation
-          schedule, normally within 35 days.
+          This immediately removes your profile, contact information, signed-in
+          devices, sign-in links, and unfinished conversation from the working
+          service. A small security record remains, but it does not contain your
+          name, email, or profile. Protected backup copies expire normally
+          within 35 days and cannot be viewed through the working service.
         </p>
       </Notice>
       <div className="field">
