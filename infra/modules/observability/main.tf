@@ -15,16 +15,14 @@ resource "aws_cloudwatch_dashboard" "this" {
       } },
       { type = "metric", x = 0, y = 6, width = 24, height = 6, properties = {
         title = "Security rejections", region = var.region, stat = "Sum", period = 300,
-        metrics = flatten([
-          for function in ["public", "staff"] : [
-            for event in values(local.security_event_types) : [
-              "GiftsInService", event.metric,
-              "Environment", trimprefix(var.prefix, "gis-"),
-              "Service", var.function_names[function],
-              "Operation", "SecurityRejection"
-            ]
+        metrics = [
+          for pair in setproduct(["public", "staff"], keys(local.security_event_types)) : [
+            "GiftsInService", local.security_event_types[pair[1]].metric,
+            "Environment", trimprefix(var.prefix, "gis-"),
+            "Service", var.function_names[pair[0]],
+            "Operation", "SecurityRejection"
           ]
-        ])
+        ]
       } }
     ]
   })

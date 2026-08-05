@@ -69,5 +69,9 @@ describe("infrastructure security invariants", () => {
     expect(observability).toContain(
       'resource "aws_cloudwatch_metric_alarm" "security_events"',
     );
+    expect(observability).not.toContain("metrics = flatten([");
+    expect(observability).toContain(
+      'for pair in setproduct(["public", "staff"], keys(local.security_event_types))',
+    );
   });
 });
