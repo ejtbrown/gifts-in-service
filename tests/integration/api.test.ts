@@ -430,9 +430,10 @@ describe("public/member API security flow", () => {
       expect(
         quotaResponses.filter((response) => response.statusCode === 429),
       ).toHaveLength(1);
-      const verificationResponses = await Promise.all(
-        Array.from({ length: 11 }, () =>
-          app.inject({
+      const verificationResponses = [];
+      for (let index = 0; index < 11; index += 1) {
+        verificationResponses.push(
+          await app.inject({
             method: "POST",
             url: "/api/member/profile/verify",
             headers: {
@@ -442,8 +443,8 @@ describe("public/member API security flow", () => {
             },
             remoteAddress: "198.51.100.42",
           }),
-        ),
-      );
+        );
+      }
       expect(
         verificationResponses.filter((response) => response.statusCode === 200),
       ).toHaveLength(10);
