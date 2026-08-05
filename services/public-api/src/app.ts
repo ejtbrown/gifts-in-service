@@ -419,7 +419,7 @@ export async function buildApp(
       ? ({
           send: () =>
             Promise.reject(new Error("CognitoUnavailableOnPublicApi")),
-        } as unknown as Pick<CognitoIdentityProviderClient, "send">)
+        } satisfies Pick<CognitoIdentityProviderClient, "send">)
       : new CognitoIdentityProviderClient({
           region: config.AWS_REGION,
           maxAttempts: 3,
@@ -1206,19 +1206,23 @@ export async function buildApp(
       return { saved: true, approvedTextSha256: textHash };
     });
 
-    app.post("/api/member/profile/verify", async (request, reply) => {
-      const session = await memberSession(request, reply, true);
-      if (!session?.personId) return;
-      await repository.verify(session.personId, now());
-      if (session.verificationCycleId) {
-        await executor.query(
-          `UPDATE magic_link_tokens SET superseded_at = $2
-         WHERE verification_cycle_id = $1::uuid AND used_at IS NULL AND superseded_at IS NULL`,
-          [session.verificationCycleId, now()],
-        );
-      }
-      return { verified: true };
-    });
+    app.post(
+      "/api/member/profile/verify",
+      { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
+      async (request, reply) => {
+        const session = await memberSession(request, reply, true);
+        if (!session?.personId) return;
+        await repository.verify(session.personId, now());
+        if (session.verificationCycleId) {
+          await executor.query(
+            `UPDATE magic_link_tokens SET superseded_at = $2
+           WHERE verification_cycle_id = $1::uuid AND used_at IS NULL AND superseded_at IS NULL`,
+            [session.verificationCycleId, now()],
+          );
+        }
+        return { verified: true };
+      },
+    );
 
     app.post("/api/member/profile/pause", async (request, reply) => {
       const session = await memberSession(request, reply, true);
@@ -1366,6 +1370,11 @@ export async function buildApp(
         const selected = target.rows[0];
         if (!selected) throw new Error("VerifiedEmailNotFound");
         if (selected.is_primary) {
+          await transaction.query(
+            `UPDATE person_emails SET is_primary = false
+             WHERE id = $1::uuid AND person_id = $2::uuid`,
+            [id, session.personId],
+          );
           await transaction.query(
             `UPDATE person_emails SET is_primary = true WHERE id = (
              SELECT id FROM person_emails WHERE person_id = $1::uuid AND id <> $2::uuid AND verified_at IS NOT NULL

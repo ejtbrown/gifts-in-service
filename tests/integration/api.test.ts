@@ -430,6 +430,25 @@ describe("public/member API security flow", () => {
       expect(
         quotaResponses.filter((response) => response.statusCode === 429),
       ).toHaveLength(1);
+      const verificationResponses = await Promise.all(
+        Array.from({ length: 11 }, () =>
+          app.inject({
+            method: "POST",
+            url: "/api/member/profile/verify",
+            headers: {
+              ...origin,
+              cookie: betaCookie,
+              "x-csrf-token": betaCsrf,
+            },
+          }),
+        ),
+      );
+      expect(
+        verificationResponses.filter((response) => response.statusCode === 200),
+      ).toHaveLength(10);
+      expect(
+        verificationResponses.filter((response) => response.statusCode === 429),
+      ).toHaveLength(1);
       const alphaEmail = fixture.emails.find(
         (candidate) =>
           candidate.normalized_email === "alpha-session@example.invalid",
