@@ -17,6 +17,6 @@ For an older repository that still emits the legacy name-only subject, omit
 `github_repository_ids`. Confirm the emitted subject in CloudTrail before
 changing an existing trust.
 
-Use the emitted environment-specific `backend_init_commands`, then move any pre-existing local state with `terraform init -migrate-state`. Do not copy state through logs or pull-request artifacts. The deploy policy lists only services in the current Terraform surface; review it and apply an organization permission boundary/SCP appropriate to the target account.
+Use the emitted environment-specific `backend_init_commands`, then move any pre-existing local state with `terraform init -migrate-state`. Do not copy state through logs or pull-request artifacts. The deploy policy lists only services in the current Terraform surface. Bootstrap also creates the `gis-application-boundary` permissions ceiling; application Terraform can create only `gis-*` roles with that boundary and cannot remove it. Add an organization SCP as another layer when the account supports one.
 
 If the account already has the GitHub OIDC provider, set `create_github_oidc_provider=false`. GitHub environments and branch protection are external configuration; create and protect them before trusting the roles.

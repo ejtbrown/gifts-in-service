@@ -7,7 +7,7 @@ function vectorLiteral(values: readonly number[]): string {
 
 export async function reembedBatch(
   executor: SqlExecutor,
-  ai: AiAdapter,
+  ai: Pick<AiAdapter, "embed">,
   config: {
     modelId: string;
     fromVersion: string;

@@ -80,6 +80,62 @@ export class SecurityStore {
     );
   }
 
+  async reserveAddEmailToken(
+    input: {
+      tokenHash: string;
+      personId: string;
+      normalizedEmail: string;
+      displayEmail: string;
+      abuseEmailHash: string;
+      expiresAt: Date;
+    },
+    since: Date,
+    maximumRequests: number,
+  ): Promise<boolean> {
+    return this.executor.transaction(async (transaction) => {
+      const lockKeys = [
+        `add-email:person:${input.personId}`,
+        `add-email:recipient:${input.abuseEmailHash}`,
+      ].sort();
+      for (const lockKey of lockKeys) {
+        await transaction.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [lockKey],
+        );
+      }
+      const counts = await transaction.query<{
+        person_count: string;
+        recipient_count: string;
+      }>(
+        `SELECT
+           count(*) FILTER (WHERE person_id = $1::uuid)::text AS person_count,
+           count(*) FILTER (WHERE abuse_email_hash = $2)::text AS recipient_count
+         FROM magic_link_tokens
+         WHERE purpose = 'ADD_EMAIL' AND issued_at >= $3::timestamptz`,
+        [input.personId, input.abuseEmailHash, since],
+      );
+      const count = counts.rows[0];
+      if (
+        Number(count?.person_count ?? 0) >= maximumRequests ||
+        Number(count?.recipient_count ?? 0) >= maximumRequests
+      )
+        return false;
+      await new SecurityStore(transaction).insertMagicToken({
+        tokenHash: input.tokenHash,
+        purpose: "ADD_EMAIL",
+        personId: input.personId,
+        normalizedEmail: input.normalizedEmail,
+        displayEmail: input.displayEmail,
+        pendingDisplayName: null,
+        consentVersion: null,
+        abuseEmailHash: input.abuseEmailHash,
+        abuseNetworkHash: null,
+        expiresAt: input.expiresAt,
+      });
+      return true;
+    });
+  }
+
   async redeemMagicToken(
     tokenHash: string,
     now: Date,
@@ -154,10 +210,22 @@ export class SecurityStore {
       verification_cycle_id: string | null;
       absolute_expires_at: Date;
     }>(
-      `UPDATE member_sessions SET last_seen_at = $2::timestamptz
-       WHERE session_hash = $1 AND revoked_at IS NULL AND idle_expires_at > $2 AND absolute_expires_at > $2
-       RETURNING session_hash, mailbox_normalized_email, mailbox_display_email, selected_person_id::text,
-         csrf_hash, verification_cycle_id::text, absolute_expires_at`,
+      `UPDATE member_sessions s SET last_seen_at = $2::timestamptz
+       WHERE s.session_hash = $1 AND s.revoked_at IS NULL
+         AND s.idle_expires_at > $2 AND s.absolute_expires_at > $2
+         AND (
+           s.selected_person_id IS NULL
+           OR s.mailbox_normalized_email IS NULL
+           OR EXISTS (
+             SELECT 1 FROM person_emails e
+             WHERE e.person_id = s.selected_person_id
+               AND e.normalized_email = s.mailbox_normalized_email
+               AND e.verified_at IS NOT NULL
+           )
+         )
+       RETURNING s.session_hash, s.mailbox_normalized_email, s.mailbox_display_email,
+         s.selected_person_id::text, s.csrf_hash, s.verification_cycle_id::text,
+         s.absolute_expires_at`,
       [sessionHash, now],
     );
     const row = result.rows[0];

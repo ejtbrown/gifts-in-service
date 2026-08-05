@@ -938,18 +938,21 @@ export function InterviewPage() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          aria-describedby="chat-input-help"
+          aria-describedby="chat-input-line-help chat-input-help"
           maxLength={3000}
           rows={4}
           disabled={busy}
           required
         />
+        <span id="chat-input-line-help" className="field-help">
+          Press Shift+Enter to add a new line.
+        </span>
         <span id="chat-input-help" className="field-help">
           {proposedProfile
-            ? "Press Enter to request changes or ask the assistant to submit this profile. Press Shift+Enter for a new line."
+            ? "Press Enter to request changes or ask the assistant to submit this profile."
             : completenessConfidence === "LOW"
-              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time. Press Shift+Enter for a new line."
-              : "Press Enter to send, or create a draft if you are ready to wrap up. Press Shift+Enter for a new line."}
+              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time."
+              : "Press Enter to send, or create a draft if you are ready to wrap up."}
         </span>
         <div className="button-row">
           <button
@@ -997,16 +1000,25 @@ export function InterviewPage() {
 
 export function ReviewPage() {
   const config = useConfig();
+  const location = useLocation();
   const navigate = useNavigate();
-  const state = useLocation().state as DraftState | null;
+  const [state] = useState<DraftState | null>(
+    () => location.state as DraftState | null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (location.state) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate]);
   if (!state)
     return (
       <div className="narrow">
         <h1>Draft no longer available</h1>
         <p>
-          Drafts stay only in memory. Your pending questions and answers remain
+          Final-review drafts stay only in the current browser tab and disappear
+          if you reload or close it. Your pending questions and answers remain
           available for up to 30 days, so you can return to the conversation and
           make a new draft.
         </p>
@@ -1085,6 +1097,7 @@ export function ReviewPage() {
 
 export function EmailManagementPage() {
   const { data, error, refresh } = useMember();
+  const navigate = useNavigate();
   const [notice, setNotice] = useState("");
   if (error)
     return (
@@ -1136,10 +1149,18 @@ export function EmailManagementPage() {
   }
   async function remove(id: string): Promise<void> {
     try {
-      await api(`/api/member/emails/${id}`, {
-        method: "DELETE",
-        csrf: "member",
-      });
+      const result = await api<{ removed: true; signedOut: boolean }>(
+        `/api/member/emails/${id}`,
+        {
+          method: "DELETE",
+          csrf: "member",
+        },
+      );
+      if (result.signedOut) {
+        setMemberCsrf("");
+        void navigate("/", { replace: true });
+        return;
+      }
       setNotice("Email association removed.");
       void refresh();
     } catch (caught) {
@@ -1332,11 +1353,14 @@ export function DeletePage() {
       <h1>Permanently delete your profile</h1>
       <Notice tone="warning">
         <p>
-          This immediately removes your profile, contact information, signed-in
-          devices, sign-in links, and unfinished conversation from the working
-          service. A small security record remains, but it does not contain your
-          name, email, or profile. Protected backup copies expire normally
-          within 35 days and cannot be viewed through the working service.
+          This immediately removes your profile, contact information, unfinished
+          conversation, and access to that profile from signed-in devices and
+          sign-in links. A mailbox-wide sign-in link may still open another
+          profile associated with the same address or start a new profile, but
+          it cannot reopen the deleted profile. A small security record remains,
+          but it does not contain your name, email, or profile. Protected backup
+          copies expire normally within 35 days and cannot be viewed through the
+          working service.
         </p>
       </Notice>
       <div className="field">
@@ -1355,7 +1379,7 @@ export function DeletePage() {
       <div className="button-row">
         <button
           className="button danger"
-          disabled={busy || confirmation !== "DELETE"}
+          disabled={busy || confirmation.toUpperCase() !== "DELETE"}
           onClick={() => void remove()}
         >
           {busy ? "Deleting…" : "Permanently delete"}

@@ -45,7 +45,16 @@ jobs:
       - run: pnpm test:e2e
       - run: pnpm test:a11y
       - run: pnpm build && pnpm build:lambdas
-      - run: pnpm audit:dependencies && pnpm audit:repo
+      - run: pnpm audit:dependencies && pnpm audit:signatures && pnpm audit:repo
+      - name: Generate and verify deployment inventory
+        run: |
+          pnpm audit:sbom
+          jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' dist/sbom.cdx.json >/dev/null
+          {
+            find apps/web/dist dist/lambda -type f -print0
+            printf 'dist/sbom.cdx.json\0'
+          } | sort -z | xargs -0 sha256sum > dist/deployment-sha256.txt
+          sha256sum -c dist/deployment-sha256.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name == 'push'
         with:
@@ -53,6 +62,8 @@ jobs:
           path: |
             apps/web/dist
             dist/lambda
+            dist/sbom.cdx.json
+            dist/deployment-sha256.txt
           retention-days: 3
           if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -117,6 +128,10 @@ jobs:
         with:
           name: deployment-bundle-${{ github.sha }}
           path: .
+      - name: Verify deployment inventory
+        run: |
+          jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' dist/sbom.cdx.json >/dev/null
+          sha256sum -c dist/deployment-sha256.txt
       - name: Deployment preflight
         env:
           DEPLOY_ENVIRONMENT: ${{ env.DEPLOY_ENV }}

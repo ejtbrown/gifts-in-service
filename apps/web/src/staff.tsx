@@ -828,6 +828,8 @@ export function StaffProfilePage() {
   const [data, setData] = useState<StaffProfileData | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [copiedEmail, setCopiedEmail] = useState("");
+  const [copyError, setCopyError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function load(): Promise<void> {
@@ -893,6 +895,21 @@ export function StaffProfilePage() {
     }
   }
 
+  async function copyEmail(email: string): Promise<void> {
+    setCopyError("");
+    try {
+      if (!navigator.clipboard)
+        throw new Error("Clipboard access is unavailable");
+      await navigator.clipboard.writeText(email);
+      setCopiedEmail(email);
+    } catch {
+      setCopiedEmail("");
+      setCopyError(
+        "The email address could not be copied. Select the address and copy it manually.",
+      );
+    }
+  }
+
   if (authError) return <AccessDenied message={authError} />;
   if (!me) return <Loading message="Checking staff access…" />;
   if (!me.permissions.includes("profile:read"))
@@ -946,11 +963,25 @@ export function StaffProfilePage() {
         <section>
           <h2>Verified contact associations</h2>
           {data.emails.length ? (
-            <ul>
+            <ul className="email-list">
               {data.emails.map((email) => (
                 <li key={email.displayEmail}>
-                  {email.displayEmail} —{" "}
-                  {email.deliverability.replaceAll("_", " ").toLowerCase()}
+                  <div>
+                    <a href={`mailto:${email.displayEmail}`}>
+                      {email.displayEmail}
+                    </a>
+                    <span>
+                      {email.deliverability.replaceAll("_", " ").toLowerCase()}
+                    </span>
+                  </div>
+                  <button
+                    className="text-button"
+                    type="button"
+                    aria-label={`Copy ${email.displayEmail} to clipboard`}
+                    onClick={() => void copyEmail(email.displayEmail)}
+                  >
+                    {copiedEmail === email.displayEmail ? "Copied" : "Copy"}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -960,6 +991,14 @@ export function StaffProfilePage() {
           <p>
             Contacting a person does not assign them or commit them to serve.
           </p>
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {copiedEmail ? `${copiedEmail} copied to the clipboard.` : ""}
+          </span>
+          {copyError && (
+            <p className="form-error" role="alert">
+              {copyError}
+            </p>
+          )}
         </section>
       )}
       {(canPause || canReactivate || canPurge) && (

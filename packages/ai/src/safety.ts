@@ -19,6 +19,9 @@ export const SENSITIVE_INFORMATION_REJECTION_MESSAGE =
 export const CONTENT_SAFETY_REJECTION_MESSAGE =
   "That response was not accepted because it triggered the privacy and safety filter. Remove sensitive, unsafe, or unrelated content and try again.";
 
+export const MALFORMED_INTERVIEW_RESPONSE_MESSAGE =
+  "The assistant could not respond after several attempts. Your response was not saved. Please try again.";
+
 export class AiSafetyInterventionError extends Error {
   override readonly name = "AiSafetyInterventionError";
 
@@ -28,6 +31,14 @@ export class AiSafetyInterventionError extends Error {
         ? SENSITIVE_INFORMATION_REJECTION_MESSAGE
         : CONTENT_SAFETY_REJECTION_MESSAGE,
     );
+  }
+}
+
+export class AiMalformedInterviewResponseError extends Error {
+  override readonly name = "AiMalformedInterviewResponseError";
+
+  constructor() {
+    super(MALFORMED_INTERVIEW_RESPONSE_MESSAGE);
   }
 }
 

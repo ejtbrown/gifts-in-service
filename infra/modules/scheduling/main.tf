@@ -14,9 +14,10 @@ resource "aws_sqs_queue" "reembed" {
 }
 
 resource "aws_iam_role" "scheduler" {
-  name               = "${var.prefix}-scheduler"
-  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = var.tags
+  name                 = "${var.prefix}-scheduler"
+  assume_role_policy   = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  permissions_boundary = var.permissions_boundary_arn
+  tags                 = var.tags
 }
 
 resource "aws_iam_role_policy" "scheduler" {
