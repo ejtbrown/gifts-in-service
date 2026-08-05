@@ -186,14 +186,18 @@ test("staff can email or copy a volunteer contact address", async ({
     "href",
     "mailto:casey.contact@example.invalid",
   );
-  await page
-    .getByRole("button", {
-      name: "Copy casey.contact@example.invalid to clipboard",
-    })
-    .click();
-  await expect(
-    page.getByRole("button", { name: /Copy casey.contact/u }),
-  ).toHaveText("Copied");
+  const copyButton = page.getByRole("button", {
+    name: "Copy casey.contact@example.invalid to clipboard",
+  });
+  const [copyButtonBox, emailLinkBox] = await Promise.all([
+    copyButton.boundingBox(),
+    emailLink.boundingBox(),
+  ]);
+  expect(copyButtonBox).not.toBeNull();
+  expect(emailLinkBox).not.toBeNull();
+  expect(copyButtonBox!.x).toBeLessThan(emailLinkBox!.x);
+  await copyButton.click();
+  await expect(copyButton).toHaveText("Copied");
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe("casey.contact@example.invalid");
