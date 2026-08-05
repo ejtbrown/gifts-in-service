@@ -140,6 +140,65 @@ test("search-only staff see the query control and no administrative navigation",
   await expect(result.getByText(approvedText, { exact: true })).toBeVisible();
 });
 
+test("staff can email or copy a volunteer contact address", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mockStaff(
+    page,
+    ["gis-staff"],
+    ["profile:search", "profile:read", "contact:read"],
+  );
+  await page.route(
+    "**/api/staff/profiles/10000000-0000-4000-8000-000000000013",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          person: {
+            displayName: "Casey Contact",
+            status: "ACTIVE",
+            approvedText:
+              "Casey Contact offers occasional fictional event-planning assistance.",
+            contentUpdatedAt: "2026-08-04T12:00:00.000Z",
+            lastVerifiedAt: "2026-08-04T12:00:00.000Z",
+            scheduledPurgeAt: null,
+          },
+          emails: [
+            {
+              displayEmail: "casey.contact@example.invalid",
+              deliverability: "DELIVERABLE",
+            },
+          ],
+          selfReportedNotice:
+            "This profile is self-reported. Confirm requirements separately.",
+        },
+      });
+    },
+  );
+
+  await page.goto("/staff/profiles/10000000-0000-4000-8000-000000000013");
+  const emailLink = page.getByRole("link", {
+    name: "casey.contact@example.invalid",
+  });
+  await expect(emailLink).toHaveAttribute(
+    "href",
+    "mailto:casey.contact@example.invalid",
+  );
+  await page
+    .getByRole("button", {
+      name: "Copy casey.contact@example.invalid to clipboard",
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /Copy casey.contact/u }),
+  ).toHaveText("Copied");
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("casey.contact@example.invalid");
+});
+
 test("unauthorized roles never see the volunteer query prompt", async ({
   page,
 }) => {
