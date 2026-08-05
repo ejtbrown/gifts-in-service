@@ -1000,10 +1000,18 @@ export function InterviewPage() {
 
 export function ReviewPage() {
   const config = useConfig();
+  const location = useLocation();
   const navigate = useNavigate();
-  const state = useLocation().state as DraftState | null;
+  const [state] = useState<DraftState | null>(
+    () => location.state as DraftState | null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (location.state) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate]);
   if (!state)
     return (
       <div className="narrow">
