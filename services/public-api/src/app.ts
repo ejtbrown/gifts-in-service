@@ -29,6 +29,8 @@ import {
 import {
   MEMBER_COOKIE,
   STAFF_COOKIE,
+  STAFF_TRUST_COOKIE,
+  STAFF_TRUST_TTL_SECONDS,
   constantTimeEqual,
   decryptShortLivedSecret,
   encryptShortLivedSecret,
@@ -39,6 +41,7 @@ import {
   normalizeEmail,
   sha256,
   staffCookieOptions,
+  staffTrustCookieOptions,
   validateCsrf,
   validateOrigin,
 } from "@gis/auth";
@@ -96,6 +99,7 @@ import {
   SecurityStore,
   type MemberSession,
   type StaffSession,
+  type StaffTrustedDevice,
 } from "./store.js";
 import {
   CognitoStaffIdentityProvider,
@@ -104,6 +108,7 @@ import {
   type StaffIdentityProvider,
   type StaffTokenVerifier,
 } from "./staff-auth.js";
+import { type CognitoDeviceCredentials } from "./cognito-device-srp.js";
 
 const NEUTRAL_MAGIC_RESPONSE =
   "If the address can receive a Gifts in Service link, an email has been sent.";
@@ -129,6 +134,7 @@ const staffAuthTransactionSchema = z.discriminatedUnion("purpose", [
     challenge: staffAuthChallengeSchema,
     session: z.string().min(20).max(4096),
     username: z.string().min(1).max(256),
+    loginIdentifier: z.string().email().max(254),
     expiresAt: z.string().datetime(),
   }),
   z.object({
@@ -139,6 +145,17 @@ const staffAuthTransactionSchema = z.discriminatedUnion("purpose", [
 ]);
 
 type StaffAuthTransaction = z.infer<typeof staffAuthTransactionSchema>;
+
+const cognitoDeviceCredentialsSchema = z.object({
+  deviceKey: z.string().min(1).max(55),
+  deviceGroupKey: z.string().min(1).max(256),
+  deviceSecret: z.string().min(32).max(512),
+});
+
+interface ActiveStaffTrustedDevice {
+  record: StaffTrustedDevice;
+  credentials: CognitoDeviceCredentials;
+}
 
 function proposedProfileMessage(profile: string): string {
   return `Here is the proposed profile:
@@ -394,6 +411,10 @@ export async function buildApp(
             Promise.reject(new Error("StaffIdentityUnavailableOnPublicApi")),
           confirmPasswordReset: () =>
             Promise.reject(new Error("StaffIdentityUnavailableOnPublicApi")),
+          confirmTrustedDevice: () =>
+            Promise.reject(new Error("StaffIdentityUnavailableOnPublicApi")),
+          forgetTrustedDevice: () =>
+            Promise.reject(new Error("StaffIdentityUnavailableOnPublicApi")),
         } satisfies StaffIdentityProvider)
       : new CognitoStaffIdentityProvider({
           region: config.AWS_REGION,
@@ -464,6 +485,78 @@ export async function buildApp(
         .map((group) => group.GroupName)
         .filter((group): group is string => Boolean(group)),
     };
+  }
+
+  async function forgetCognitoDevices(
+    devices: readonly { cognitoUsername: string; deviceKey: string }[],
+  ): Promise<void> {
+    if (config.STAFF_AUTH_ADAPTER !== "cognito") return;
+    await Promise.allSettled(
+      devices.map((device) =>
+        staffIdentityProvider.forgetTrustedDevice(
+          device.cognitoUsername,
+          device.deviceKey,
+        ),
+      ),
+    );
+  }
+
+  async function revokeTrustedDevicesForSubject(
+    subject: string,
+    current: Date,
+  ): Promise<number> {
+    const revoked = await security.revokeStaffTrustedDevicesForSubject(
+      subject,
+      current,
+    );
+    await forgetCognitoDevices(revoked);
+    return revoked.length;
+  }
+
+  async function activeTrustedDevice(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<ActiveStaffTrustedDevice | null> {
+    const raw = request.cookies[STAFF_TRUST_COOKIE];
+    if (!raw) return null;
+    const trustHash = keyedHash(raw, config.SESSION_HMAC_KEY);
+    const record = await security.getStaffTrustedDevice(trustHash);
+    const current = now();
+    if (!record || record.revokedAt || record.expiresAt <= current) {
+      if (record && !record.revokedAt) {
+        const revoked = await security.revokeStaffTrustedDevice(
+          trustHash,
+          current,
+        );
+        if (revoked) await forgetCognitoDevices([revoked]);
+      }
+      reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+      return null;
+    }
+    try {
+      const credentials = cognitoDeviceCredentialsSchema.parse(
+        JSON.parse(
+          decryptShortLivedSecret(
+            record.credentialsCiphertext,
+            `${config.SESSION_HMAC_KEY}:staff-trusted-device:v1`,
+          ),
+        ),
+      );
+      if (
+        credentials.deviceKey !== record.deviceKey ||
+        credentials.deviceGroupKey !== record.deviceGroupKey
+      )
+        throw new Error("TrustedDeviceMetadataMismatch");
+      return { record, credentials };
+    } catch {
+      const revoked = await security.revokeStaffTrustedDevice(
+        trustHash,
+        current,
+      );
+      if (revoked) await forgetCognitoDevices([revoked]);
+      reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+      return null;
+    }
   }
   const requestStarts = new WeakMap<FastifyRequest, number>();
   const app = Fastify({
@@ -1445,20 +1538,43 @@ export async function buildApp(
         now: now(),
       });
       reply.setCookie(STAFF_COOKIE, sessionSecret.raw, staffCookieOptions());
-      return { groups, permissions: effectivePermissions, csrfToken: csrf.raw };
+      return {
+        groups,
+        permissions: effectivePermissions,
+        csrfToken: csrf.raw,
+        trustedBrowser: false,
+      };
     });
 
     async function finishStaffSignIn(
       step: StaffAuthStep,
       reply: FastifyReply,
+      input: {
+        loginIdentifier: string;
+        trustBrowser: boolean;
+        correlationId: string;
+        currentTrustedDevice?: ActiveStaffTrustedDevice;
+      },
     ): Promise<unknown> {
       if (!step.authenticated) {
+        if (
+          step.trustedDeviceStatus === "rejected" &&
+          input.currentTrustedDevice
+        ) {
+          const revoked = await security.revokeStaffTrustedDevice(
+            input.currentTrustedDevice.record.trustHash,
+            now(),
+          );
+          if (revoked) await forgetCognitoDevices([revoked]);
+          reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+        }
         const transaction = protectStaffAuthTransaction(
           {
             purpose: "CHALLENGE",
             challenge: step.challenge,
             session: step.session,
             username: step.username,
+            loginIdentifier: input.loginIdentifier,
             expiresAt: new Date(now().getTime() + 10 * 60 * 1000).toISOString(),
           },
           config.SESSION_HMAC_KEY,
@@ -1475,10 +1591,43 @@ export async function buildApp(
         .map((group) => groupSchema.safeParse(group))
         .filter((result) => result.success)
         .map((result) => result.data);
-      if (groups.length === 0)
+      if (groups.length === 0) {
+        if (input.currentTrustedDevice) {
+          const revoked = await security.revokeStaffTrustedDevice(
+            input.currentTrustedDevice.record.trustHash,
+            now(),
+          );
+          if (revoked) await forgetCognitoDevices([revoked]);
+          reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+        }
         return reply.status(403).send({
           error: "This account has not been assigned Gifts in Service access.",
         });
+      }
+      if (step.trustedDeviceStatus === "used") {
+        const currentTrusted = input.currentTrustedDevice;
+        if (
+          !currentTrusted ||
+          currentTrusted.record.subject !== identity.subject ||
+          !(await security.markStaffTrustedDeviceUsed(
+            currentTrusted.record.trustHash,
+            identity.subject,
+            now(),
+          ))
+        ) {
+          if (currentTrusted) {
+            const revoked = await security.revokeStaffTrustedDevice(
+              currentTrusted.record.trustHash,
+              now(),
+            );
+            if (revoked) await forgetCognitoDevices([revoked]);
+          }
+          reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+          return reply
+            .status(401)
+            .send({ error: "This browser must complete MFA again." });
+        }
+      }
       const sessionSecret = generateOpaqueSecret(config.SESSION_HMAC_KEY);
       const csrf = generateOpaqueSecret(config.SESSION_HMAC_KEY);
       const effectivePermissions = [...permissionsFor(groups)];
@@ -1490,12 +1639,90 @@ export async function buildApp(
         csrfHash: csrf.hash,
         now: now(),
       });
+      let trustedBrowserExpiresAt: string | undefined;
+      if (input.trustBrowser && step.accessToken && step.newDeviceMetadata) {
+        let createdTrustHash: string | undefined;
+        try {
+          const credentials = await staffIdentityProvider.confirmTrustedDevice({
+            accessToken: step.accessToken,
+            deviceKey: step.newDeviceMetadata.deviceKey,
+            deviceGroupKey: step.newDeviceMetadata.deviceGroupKey,
+          });
+          const trust = generateOpaqueSecret(config.SESSION_HMAC_KEY);
+          createdTrustHash = trust.hash;
+          const current = now();
+          const expiresAt = new Date(
+            current.getTime() + STAFF_TRUST_TTL_SECONDS * 1000,
+          );
+          const evicted = await security.createStaffTrustedDevice({
+            trustHash: trust.hash,
+            subject: identity.subject,
+            cognitoUsername: step.username,
+            loginIdentifier: input.loginIdentifier,
+            deviceKey: credentials.deviceKey,
+            deviceGroupKey: credentials.deviceGroupKey,
+            credentialsCiphertext: encryptShortLivedSecret(
+              JSON.stringify(credentials),
+              `${config.SESSION_HMAC_KEY}:staff-trusted-device:v1`,
+            ),
+            now: current,
+            expiresAt,
+          });
+          await forgetCognitoDevices(evicted);
+          await repository.writeAudit({
+            actorType: "STAFF",
+            actorId: identity.subject,
+            roles: groups,
+            action: "STAFF_TRUSTED_BROWSER_ADDED",
+            targetId: identity.subject,
+            correlationId: input.correlationId,
+            succeeded: true,
+            metadata: {
+              lifetimeDays: 30,
+              evictedBrowserCount: evicted.length,
+            },
+          });
+          reply.setCookie(
+            STAFF_TRUST_COOKIE,
+            trust.raw,
+            staffTrustCookieOptions(),
+          );
+          trustedBrowserExpiresAt = expiresAt.toISOString();
+        } catch {
+          let locallyTrackedDeviceForgotten = false;
+          if (createdTrustHash) {
+            const revoked = await security.revokeStaffTrustedDevice(
+              createdTrustHash,
+              now(),
+            );
+            if (revoked) {
+              await forgetCognitoDevices([revoked]);
+              locallyTrackedDeviceForgotten = true;
+            }
+          }
+          if (!locallyTrackedDeviceForgotten)
+            await forgetCognitoDevices([
+              {
+                cognitoUsername: step.username,
+                deviceKey: step.newDeviceMetadata.deviceKey,
+              },
+            ]);
+          reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+        }
+      } else if (
+        step.trustedDeviceStatus === "used" &&
+        input.currentTrustedDevice
+      ) {
+        trustedBrowserExpiresAt =
+          input.currentTrustedDevice.record.expiresAt.toISOString();
+      }
       reply.setCookie(STAFF_COOKIE, sessionSecret.raw, staffCookieOptions());
       return {
         authenticated: true,
         groups,
         permissions: effectivePermissions,
         csrfToken: csrf.raw,
+        ...(trustedBrowserExpiresAt ? { trustedBrowserExpiresAt } : {}),
       };
     }
 
@@ -1517,13 +1744,22 @@ export async function buildApp(
             password: z.string().min(1).max(256),
           })
           .parse(request.body);
+        const loginIdentifier = normalizeEmail(body.email);
+        const currentTrustedDevice = await activeTrustedDevice(request, reply);
         try {
           return await finishStaffSignIn(
             await staffIdentityProvider.startPasswordSignIn(
-              normalizeEmail(body.email),
+              loginIdentifier,
               body.password,
+              currentTrustedDevice?.credentials,
             ),
             reply,
+            {
+              loginIdentifier,
+              trustBrowser: false,
+              correlationId: request.id,
+              ...(currentTrustedDevice ? { currentTrustedDevice } : {}),
+            },
           );
         } catch (error) {
           const failure = staffAuthFailure(error);
@@ -1544,6 +1780,7 @@ export async function buildApp(
           .object({
             transaction: z.string().min(40).max(16_384),
             response: z.string().min(1).max(256),
+            trustBrowser: z.boolean().default(false),
           })
           .parse(request.body);
         const transaction = readStaffAuthTransaction(
@@ -1573,6 +1810,13 @@ export async function buildApp(
               response: body.response,
             }),
             reply,
+            {
+              loginIdentifier: transaction.loginIdentifier,
+              trustBrowser:
+                body.trustBrowser &&
+                transaction.challenge !== "NEW_PASSWORD_REQUIRED",
+              correlationId: request.id,
+            },
           );
         } catch (error) {
           const failure = staffAuthFailure(error);
@@ -1640,11 +1884,22 @@ export async function buildApp(
             .status(400)
             .send({ error: "This password reset expired. Start again." });
         try {
-          await staffIdentityProvider.confirmPasswordReset(
-            transaction.username,
-            body.code,
-            body.newPassword,
-          );
+          const resetIdentity =
+            await staffIdentityProvider.confirmPasswordReset(
+              transaction.username,
+              body.code,
+              body.newPassword,
+            );
+          const revoked = resetIdentity
+            ? await security.revokeStaffTrustedDevicesForSubject(
+                resetIdentity.subject,
+                now(),
+              )
+            : await security.revokeStaffTrustedDevicesForLogin(
+                transaction.username,
+                now(),
+              );
+          await forgetCognitoDevices(revoked);
           return { reset: true };
         } catch (error) {
           const failure = staffAuthFailure(error);
@@ -1656,6 +1911,7 @@ export async function buildApp(
     app.get("/api/staff/me", async (request, reply) => {
       const session = await staffSession(request, reply);
       if (!session) return;
+      const trustedDevice = await activeTrustedDevice(request, reply);
       const csrf = generateOpaqueSecret(config.SESSION_HMAC_KEY);
       await security.rotateStaffCsrf(session.sessionHash, csrf.hash);
       return {
@@ -1663,6 +1919,7 @@ export async function buildApp(
         groups: session.groups,
         permissions: session.permissions,
         csrfToken: csrf.raw,
+        trustedBrowser: trustedDevice?.record.subject === session.subject,
       };
     });
 
@@ -2109,6 +2366,10 @@ export async function buildApp(
         return reply.status(403).send({
           error: "High-privilege users require the AWS-authorized process.",
         });
+      const revokedTrustedBrowserCount = await revokeTrustedDevicesForSubject(
+        subject,
+        now(),
+      );
       await executor.query(
         `UPDATE staff_sessions SET revoked_at = $2::timestamptz
        WHERE cognito_subject = $1 AND revoked_at IS NULL`,
@@ -2154,7 +2415,10 @@ export async function buildApp(
         targetId: subject,
         correlationId: request.id,
         succeeded: true,
-        metadata: { groupCount: body.groups.length },
+        metadata: {
+          groupCount: body.groups.length,
+          revokedTrustedBrowserCount,
+        },
       });
       return { updated: true, groups: body.groups };
     });
@@ -2177,6 +2441,7 @@ export async function buildApp(
           return reply
             .status(409)
             .send({ error: "Use Sign out to end your own staff session." });
+        let cognitoUsername: string | undefined;
         if (config.STAFF_AUTH_ADAPTER === "cognito") {
           const target = await cognitoAccessTarget(subject);
           if (!target)
@@ -2185,17 +2450,24 @@ export async function buildApp(
             return reply.status(403).send({
               error: "High-privilege users require the AWS-authorized process.",
             });
-          await cognito.send(
-            new AdminUserGlobalSignOutCommand({
-              UserPoolId: config.COGNITO_USER_POOL_ID,
-              Username: target.username,
-            }),
-          );
+          cognitoUsername = target.username;
         }
+        const revokedTrustedBrowserCount = await revokeTrustedDevicesForSubject(
+          subject,
+          now(),
+        );
         await executor.query(
           "UPDATE staff_sessions SET revoked_at = $2 WHERE cognito_subject = $1 AND revoked_at IS NULL",
           [subject, now()],
         );
+        if (cognitoUsername) {
+          await cognito.send(
+            new AdminUserGlobalSignOutCommand({
+              UserPoolId: config.COGNITO_USER_POOL_ID,
+              Username: cognitoUsername,
+            }),
+          );
+        }
         await repository.writeAudit({
           actorType: "STAFF",
           actorId: session.subject,
@@ -2204,6 +2476,7 @@ export async function buildApp(
           targetId: subject,
           correlationId: request.id,
           succeeded: true,
+          metadata: { revokedTrustedBrowserCount },
         });
         return { revoked: true };
       },
@@ -2243,6 +2516,10 @@ export async function buildApp(
           Username: target.username,
         }),
       );
+      const revokedTrustedBrowserCount = await revokeTrustedDevicesForSubject(
+        subject,
+        now(),
+      );
       await executor.query(
         "UPDATE staff_sessions SET revoked_at = $2 WHERE cognito_subject = $1 AND revoked_at IS NULL",
         [subject, now()],
@@ -2255,6 +2532,7 @@ export async function buildApp(
         targetId: subject,
         correlationId: request.id,
         succeeded: true,
+        metadata: { revokedTrustedBrowserCount },
       });
       return { disabled: true };
     });
@@ -2327,6 +2605,10 @@ export async function buildApp(
         return reply.status(403).send({
           error: "High-privilege users require the AWS-authorized process.",
         });
+      const revokedTrustedBrowserCount = await revokeTrustedDevicesForSubject(
+        subject,
+        now(),
+      );
       await executor.query(
         "UPDATE staff_sessions SET revoked_at = $2 WHERE cognito_subject = $1 AND revoked_at IS NULL",
         [subject, now()],
@@ -2345,8 +2627,37 @@ export async function buildApp(
         targetId: subject,
         correlationId: request.id,
         succeeded: true,
+        metadata: { revokedTrustedBrowserCount },
       });
       return { deleted: true };
+    });
+
+    app.post("/api/staff/auth/forget-browser", async (request, reply) => {
+      const session = await staffSession(request, reply, undefined, true);
+      if (!session) return;
+      const rawTrust = request.cookies[STAFF_TRUST_COOKIE];
+      const revoked = rawTrust
+        ? await security.revokeStaffTrustedDevice(
+            keyedHash(rawTrust, config.SESSION_HMAC_KEY),
+            now(),
+            session.subject,
+          )
+        : null;
+      if (revoked) await forgetCognitoDevices([revoked]);
+      await security.revokeStaffSession(session.sessionHash, now());
+      await repository.writeAudit({
+        actorType: "STAFF",
+        actorId: session.subject,
+        roles: session.groups,
+        action: "STAFF_TRUSTED_BROWSER_FORGOTTEN",
+        targetId: session.subject,
+        correlationId: request.id,
+        succeeded: true,
+        metadata: { trustedBrowserFound: Boolean(revoked) },
+      });
+      reply.clearCookie(STAFF_COOKIE, { path: "/" });
+      reply.clearCookie(STAFF_TRUST_COOKIE, { path: "/" });
+      return { signedOut: true, browserForgotten: true };
     });
 
     app.post("/api/staff/auth/logout", async (request, reply) => {

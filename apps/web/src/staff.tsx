@@ -160,7 +160,9 @@ function useStaff(): { me: StaffMe | null; error: string } {
 
 function StaffNavigation({ me }: { me: StaffMe }) {
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<"signout" | "forget" | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const links = [
     {
@@ -195,20 +197,25 @@ function StaffNavigation({ me }: { me: StaffMe }) {
     },
   ].filter((link) => me.permissions.includes(link.permission));
 
-  async function signOut(): Promise<void> {
-    setBusy(true);
+  async function signOut(forgetBrowser = false): Promise<void> {
+    setBusyAction(forgetBrowser ? "forget" : "signout");
     setError("");
     try {
-      await api("/api/staff/auth/logout", {
-        method: "POST",
-        csrf: "staff",
-        body: "{}",
-      });
+      await api(
+        forgetBrowser
+          ? "/api/staff/auth/forget-browser"
+          : "/api/staff/auth/logout",
+        {
+          method: "POST",
+          csrf: "staff",
+          body: "{}",
+        },
+      );
       setStaffCsrf("");
       void navigate("/staff", { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign out failed.");
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -228,14 +235,26 @@ function StaffNavigation({ me }: { me: StaffMe }) {
             ))}
           </nav>
         </div>
-        <button
-          className="button secondary"
-          type="button"
-          disabled={busy}
-          onClick={() => void signOut()}
-        >
-          {busy ? "Signing out…" : "Sign out"}
-        </button>
+        <div className="button-row staff-session-actions">
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busyAction !== null}
+            onClick={() => void signOut()}
+          >
+            {busyAction === "signout" ? "Signing out…" : "Sign out"}
+          </button>
+          {me.trustedBrowser && (
+            <button
+              className="text-button"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => void signOut(true)}
+            >
+              {busyAction === "forget" ? "Forgetting…" : "Forget this browser"}
+            </button>
+          )}
+        </div>
       </div>
       {error && (
         <Notice tone="warning">
@@ -344,6 +363,7 @@ export function StaffLandingPage() {
       challenge === "NEW_PASSWORD_REQUIRED"
         ? formString(data, "newPassword")
         : formString(data, "code").replaceAll(/\s/gu, "");
+    const trustBrowser = data.get("trustBrowser") === "on";
     if (
       challenge === "NEW_PASSWORD_REQUIRED" &&
       response !== data.get("confirmPassword")
@@ -357,7 +377,7 @@ export function StaffLandingPage() {
       finishSignIn(
         await api<StaffAuthResponse>("/api/staff/auth/challenge", {
           method: "POST",
-          body: JSON.stringify({ transaction, response }),
+          body: JSON.stringify({ transaction, response, trustBrowser }),
         }),
       );
     } catch (caught) {
@@ -560,6 +580,16 @@ export function StaffLandingPage() {
                     </p>
                   </>
                 )}
+                <label className="check trusted-browser-choice">
+                  <input name="trustBrowser" type="checkbox" disabled={busy} />
+                  <span>
+                    Trust this browser for 30 days
+                    <small className="field-help">
+                      Only use this on a private device. You will still enter
+                      your password after the 24-hour staff session expires.
+                    </small>
+                  </span>
+                </label>
                 <OneTimeCodeField
                   id="staff-auth-code"
                   autoFocus

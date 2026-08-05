@@ -155,7 +155,7 @@ resource "aws_iam_role_policy" "ses" {
 resource "aws_iam_role_policy" "cognito_admin" {
   name   = "cognito-lower-access-admin"
   role   = aws_iam_role.function["staff"].id
-  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["cognito-idp:AdminInitiateAuth", "cognito-idp:AdminRespondToAuthChallenge", "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser", "cognito-idp:AdminDisableUser", "cognito-idp:AdminEnableUser", "cognito-idp:AdminUserGlobalSignOut", "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup", "cognito-idp:AdminListGroupsForUser", "cognito-idp:ListUsers", "cognito-idp:ListGroups"], Resource = "arn:aws:cognito-idp:${var.region}:*:userpool/${var.cognito_user_pool_id}" }] })
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["cognito-idp:AdminInitiateAuth", "cognito-idp:AdminRespondToAuthChallenge", "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser", "cognito-idp:AdminDisableUser", "cognito-idp:AdminEnableUser", "cognito-idp:AdminForgetDevice", "cognito-idp:AdminUserGlobalSignOut", "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup", "cognito-idp:AdminListGroupsForUser", "cognito-idp:ListUsers", "cognito-idp:ListGroups"], Resource = "arn:aws:cognito-idp:${var.region}:*:userpool/${var.cognito_user_pool_id}" }] })
 }
 
 resource "aws_cloudwatch_log_group" "function" {

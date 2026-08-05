@@ -30,8 +30,9 @@ flowchart LR
 - A profile draft remains transient until the member approves the exact text. Approval is bound to a short-lived server-side token and SHA-256 hash; the embedding is made from that exact text only.
 - Magic links place 256-bit opaque material in the URL fragment. Only keyed hashes are stored. Redemption is a POST and rotates to an opaque, hashed member session with CSRF and Origin checks. Member sessions have a fixed 30-day absolute lifetime that activity does not extend.
 - Removing a verified email revokes every member session authenticated through that mailbox in the same database transaction. Person-scoped reconfirmation sessions remain valid. Add-email verification issuance is bounded by in-process throttling plus race-safe, durable per-person and per-recipient quotas.
-- Staff enter Cognito credentials and TOTP codes in the `/staff` application page. The same-origin staff Lambda performs Cognito's server-side password/challenge flow, keeps the confidential app-client secret off the browser, verifies the final ID token and exact group claims, then discards that token and issues a separate opaque staff session. Cognito challenge state is carried only in a short-lived authenticated-encrypted browser transaction.
-- Changing a lower-privilege staff user's groups first revokes all local sessions and performs Cognito global sign-out, so a cached permission snapshot cannot survive the directory change.
+- Staff enter Cognito credentials and TOTP codes in the `/staff` application page. The same-origin staff Lambda performs Cognito's server-side password/challenge flow, keeps the confidential app-client secret off the browser, verifies the final ID token and exact group claims, then discards that token and issues a separate 24-hour opaque staff session. Cognito challenge state is carried only in a short-lived authenticated-encrypted browser transaction.
+- After successful TOTP, staff may opt in to a fixed 30-day trusted-browser credential. A host-only HttpOnly opaque cookie selects a keyed-hash record whose Cognito device secret is authenticated-encrypted in Aurora. Cognito device SRP can replace TOTP only after password verification; it does not extend the staff session. Expiry, mismatch, reset, role/account changes, or explicit forgetting revoke local trust.
+- Changing a lower-privilege staff user's groups first revokes all local sessions and trusted browsers and performs Cognito global sign-out, so a cached permission snapshot cannot survive the directory change.
 - Staff search combines PostgreSQL full-text, pgvector cosine, and trigram candidate lists using reciprocal-rank fusion. Bedrock may rerank only those approved texts; deterministic validation requires the separate evidence snippets to be exact substrings of approved profiles and rejects results with unsupported evidence.
 - CloudFront adds an origin-verification header. Production Lambdas reject direct API Gateway requests without it.
 
@@ -111,6 +112,15 @@ erDiagram
     text_array groups
     timestamptz expires_at
   }
+  STAFF_TRUSTED_DEVICES {
+    char trust_hash PK
+    text cognito_subject
+    text cognito_username
+    text device_key
+    text device_credentials_ciphertext
+    timestamptz expires_at
+    timestamptz revoked_at
+  }
 ```
 
-Material choices are recorded in [ADR 0001](adr/0001-approved-prose-and-stateless-interviews.md), [ADR 0002](adr/0002-serverless-data-api-and-hybrid-search.md), [ADR 0003](adr/0003-separate-opaque-sessions.md), [ADR 0004](adr/0004-resumable-pending-interviews.md), [ADR 0005](adr/0005-in-page-cognito-staff-auth.md), [ADR 0006](adr/0006-environment-branch-promotion.md), and [ADR 0007](adr/0007-balanced-interview-memory.md). ADR 0004 supersedes ADR 0001's stateless-interview decision, and ADR 0005 supersedes ADR 0003's hosted authorization-code details.
+Material choices are recorded in [ADR 0001](adr/0001-approved-prose-and-stateless-interviews.md), [ADR 0002](adr/0002-serverless-data-api-and-hybrid-search.md), [ADR 0003](adr/0003-separate-opaque-sessions.md), [ADR 0004](adr/0004-resumable-pending-interviews.md), [ADR 0005](adr/0005-in-page-cognito-staff-auth.md), [ADR 0006](adr/0006-environment-branch-promotion.md), [ADR 0007](adr/0007-balanced-interview-memory.md), and [ADR 0008](adr/0008-thirty-day-trusted-staff-browser.md). ADR 0004 supersedes ADR 0001's stateless-interview decision, and ADR 0005 supersedes ADR 0003's hosted authorization-code details.

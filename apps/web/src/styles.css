@@ -814,6 +814,12 @@ textarea {
 .staff-console-nav a.active {
   text-decoration-thickness: 0.18em;
 }
+.staff-session-actions {
+  justify-content: flex-end;
+}
+.trusted-browser-choice {
+  margin-block: 1.25rem;
+}
 .totp-qr {
   display: block;
   width: min(240px, 100%);

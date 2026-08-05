@@ -53,6 +53,22 @@ describe("infrastructure security invariants", () => {
     expect(api).toContain('Action = ["bedrock:InvokeModel"]');
   });
 
+  it("enables opt-in Cognito device trust with narrowly bounded revocation", async () => {
+    const [cognito, api, bootstrap] = await Promise.all([
+      readFile(
+        resolve(repositoryRoot, "infra/modules/cognito/main.tf"),
+        "utf8",
+      ),
+      readFile(resolve(repositoryRoot, "infra/modules/api/main.tf"), "utf8"),
+      readFile(resolve(repositoryRoot, "infra/bootstrap/main.tf"), "utf8"),
+    ]);
+
+    expect(cognito).toContain("challenge_required_on_new_device      = true");
+    expect(cognito).toContain("device_only_remembered_on_user_prompt = true");
+    expect(api).toContain('"cognito-idp:AdminForgetDevice"');
+    expect(bootstrap).toContain('"cognito-idp:AdminForgetDevice"');
+  });
+
   it("alarms on authentication, authorization, and rate-limit rejection spikes", async () => {
     const observability = await readFile(
       resolve(repositoryRoot, "infra/modules/observability/main.tf"),
