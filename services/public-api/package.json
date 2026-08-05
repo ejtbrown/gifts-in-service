@@ -16,17 +16,17 @@
     "@fastify/aws-lambda": "6.4.0",
     "@fastify/cookie": "11.1.2",
     "@fastify/helmet": "13.1.0",
-    "@fastify/rate-limit": "11.1.0",
-    "@aws-sdk/client-cognito-identity-provider": "3.1088.0",
+    "@fastify/rate-limit": "11.2.0",
+    "@aws-sdk/client-cognito-identity-provider": "3.1101.0",
     "@gis/ai": "workspace:*",
     "@gis/auth": "workspace:*",
     "@gis/db": "workspace:*",
     "@gis/email": "workspace:*",
     "@gis/shared": "workspace:*",
     "dotenv": "17.4.2",
-    "fastify": "5.10.0",
-    "jose": "6.2.3",
-    "zod": "4.1.10"
+    "fastify": "5.11.0",
+    "jose": "6.2.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "typescript": "5.9.2"
