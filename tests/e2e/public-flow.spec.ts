@@ -166,6 +166,19 @@ test("fictional member resumes a pending interview through a new link, approves 
     page.getByRole("button", { name: "Delete Profile" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Create a draft" }).click();
+  await expect(page.getByLabel("Exact proposed profile")).toContainText(
+    "WordPress and React",
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Draft no longer available" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Final-review drafts stay only in the current browser tab/u),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Return to conversation" }).click();
+  await expect(page.getByText(firstAnswer, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create a draft" }).click();
   const exactDraft = await page
     .getByLabel("Exact proposed profile")
     .innerText();
@@ -266,7 +279,7 @@ test("fictional member resumes a pending interview through a new link, approves 
   await expect(
     page.getByRole("heading", { name: "Permanently delete your profile" }),
   ).toBeVisible();
-  await page.getByLabel("Type DELETE to confirm").fill("DELETE");
+  await page.getByLabel("Type DELETE to confirm").fill("delete");
   await page.getByRole("button", { name: "Permanently delete" }).click();
   await expect(
     page.getByRole("heading", { name: "Share your gifts, in your own words" }),
@@ -328,6 +341,9 @@ test("landing disclosure is present before identity fields and request response 
   await summaries.nth(0).focus();
   await summaries.nth(0).press("Enter");
   await expect(sections.nth(0)).toHaveAttribute("open", "");
+  await expect(sections.nth(0)).toContainText(
+    "including anyone with access to a shared mailbox",
+  );
   await summaries.nth(1).click();
   await expect(
     page.getByRole("link", {
@@ -360,6 +376,29 @@ test("landing disclosure is present before identity fields and request response 
       "If the address can receive a Gifts in Service link, an email has been sent.",
     ),
   ).toBeVisible();
+});
+
+test("policy copy matches mailbox access, draft retention, and search evidence behavior", async ({
+  page,
+}) => {
+  await page.goto("/ai-use");
+  await expect(page.locator("main")).toContainText(
+    "If the address is a shared mailbox, anyone with access to that mailbox may be able to open it.",
+  );
+  await expect(page.locator("main")).toContainText(
+    "A separate draft opened on the final-review page",
+  );
+  await expect(page.locator("main")).toContainText(
+    "Every result includes evidence copied exactly from the approved profile.",
+  );
+  await expect(page.locator("main")).toContainText(
+    "The AI may write a separate explanation of the possible match.",
+  );
+
+  await page.goto("/privacy");
+  await expect(page.locator("main")).toContainText(
+    "A mailbox-wide sign-in link may still open another profile associated with the same address or start a new profile, but it cannot reopen the deleted profile.",
+  );
 });
 
 test("necessary technical terms open keyboard-accessible plain-language explanations", async ({

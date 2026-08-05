@@ -29,13 +29,15 @@ flowchart LR
 - API Gateway, WAF, CloudFront, Lambda logs, traces, and application logs are configured or coded without request/response bodies. Production is blocked until an operator independently confirms Bedrock retention and invocation-logging posture.
 - A profile draft remains transient until the member approves the exact text. Approval is bound to a short-lived server-side token and SHA-256 hash; the embedding is made from that exact text only.
 - Magic links place 256-bit opaque material in the URL fragment. Only keyed hashes are stored. Redemption is a POST and rotates to an opaque, hashed member session with CSRF and Origin checks. Member sessions have a fixed 30-day absolute lifetime that activity does not extend.
+- Removing a verified email revokes every member session authenticated through that mailbox in the same database transaction. Person-scoped reconfirmation sessions remain valid. Add-email verification issuance is bounded by in-process throttling plus race-safe, durable per-person and per-recipient quotas.
 - Staff enter Cognito credentials and TOTP codes in the `/staff` application page. The same-origin staff Lambda performs Cognito's server-side password/challenge flow, keeps the confidential app-client secret off the browser, verifies the final ID token and exact group claims, then discards that token and issues a separate opaque staff session. Cognito challenge state is carried only in a short-lived authenticated-encrypted browser transaction.
-- Staff search combines PostgreSQL full-text, pgvector cosine, and trigram candidate lists using reciprocal-rank fusion. Bedrock may rerank only those approved texts; deterministic evidence validation rejects unsupported reasons.
+- Changing a lower-privilege staff user's groups first revokes all local sessions and performs Cognito global sign-out, so a cached permission snapshot cannot survive the directory change.
+- Staff search combines PostgreSQL full-text, pgvector cosine, and trigram candidate lists using reciprocal-rank fusion. Bedrock may rerank only those approved texts; deterministic validation requires the separate evidence snippets to be exact substrings of approved profiles and rejects results with unsupported evidence.
 - CloudFront adds an origin-verification header. Production Lambdas reject direct API Gateway requests without it.
 
 ## Deployment and failure shape
 
-Aurora Serverless v2 defaults to 0–2 ACU with auto-pause. The Data API absorbs connection management but the first request after pause can be slower. Lambda concurrency is deliberately capped. Email events and re-embedding use encrypted queues with dead-letter queues and partial-batch failure reporting. Lifecycle work is date-derived and idempotent.
+Aurora Serverless v2 defaults to 0–2 ACU with auto-pause. The Data API absorbs connection management but the first request after pause can be slower. Lambda concurrency is deliberately capped. Public/member and staff builds compile out the opposite route surface, and each API/worker receives a service-specific environment and IAM policy. All runtime roles are capped by the bootstrap-managed permissions boundary. Email events and re-embedding use encrypted queues with dead-letter queues and partial-batch failure reporting. Lifecycle work is date-derived and idempotent.
 
 The static site has no third-party scripts, fonts, pixels, or analytics. CloudFront supplies CSP, no-referrer, HSTS, framing, MIME-sniffing, and permissions headers. API responses and authentication pages are non-cacheable.
 

@@ -88,6 +88,61 @@ export interface BedrockAdapterConfig {
   searchRerankerPrompt: string;
 }
 
+export interface BedrockEmbeddingConfig {
+  region: string;
+  embeddingModelId: string;
+}
+
+export class BedrockEmbeddingAdapter {
+  readonly #client: BedrockRuntimeClient;
+  readonly #config: BedrockEmbeddingConfig;
+
+  constructor(
+    config: BedrockEmbeddingConfig,
+    client = new BedrockRuntimeClient({
+      region: config.region,
+      maxAttempts: 3,
+    }),
+  ) {
+    this.#config = config;
+    this.#client = client;
+  }
+
+  async embed(
+    exactApprovedProse: string,
+    dimension: number,
+  ): Promise<number[]> {
+    const started = Date.now();
+    try {
+      const response = await this.#client.send(
+        new InvokeModelCommand({
+          modelId: this.#config.embeddingModelId,
+          contentType: "application/json",
+          accept: "application/json",
+          body: JSON.stringify({
+            inputText: exactApprovedProse,
+            dimensions: dimension,
+            normalize: true,
+          }),
+        }),
+      );
+      const parsed = z
+        .object({ embedding: z.array(z.number()).length(dimension) })
+        .parse(JSON.parse(new TextDecoder().decode(response.body)));
+      emitMetric(
+        "BedrockLatency",
+        Date.now() - started,
+        "Milliseconds",
+        "Embed",
+      );
+      return parsed.embedding;
+    } catch (error) {
+      emitMetric("BedrockErrors", 1, "Count", "Embed");
+      throw error;
+    }
+  }
+}
+
 function textFrom(response: unknown): string {
   const output = response as {
     output?: { message?: { content?: { text?: string }[] } };

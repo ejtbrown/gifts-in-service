@@ -151,7 +151,7 @@ describe("grounded hybrid search", () => {
     expect(fused[0]?.matchedLists).toBe(2);
   });
 
-  it("rejects unknown IDs, duplicate IDs, and non-substring evidence", () => {
+  it("accepts a separate explanation with exact evidence and rejects invalid evidence", () => {
     const candidates = [
       {
         id: "10000000-0000-4000-8000-000000000001",
@@ -162,11 +162,12 @@ describe("grounded hybrid search", () => {
       {
         candidate_id: candidates[0]!.id,
         relevance: "HIGH" as const,
-        reason: "Relevant",
+        reason: "The candidate appears relevant to the request.",
         evidence: ["ice machines"],
         cautions: [],
       },
     ];
+    expect(candidates[0]!.approvedText).not.toContain(good[0]!.reason);
     expect(validateGroundedResults(good, candidates)).toEqual(good);
     expect(
       validateGroundedResults(

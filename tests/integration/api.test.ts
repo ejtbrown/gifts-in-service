@@ -135,6 +135,8 @@ interface FakeCognitoUser {
 }
 
 class FakeCognitoAccessClient {
+  readonly globalSignOuts: string[] = [];
+  failNextGroupMutation = false;
   readonly users: FakeCognitoUser[] = [
     {
       subject: "30000000-0000-4000-8000-000000000001",
@@ -216,12 +218,20 @@ class FakeCognitoAccessClient {
       });
     }
     if (value.constructor.name === "AdminAddUserToGroupCommand") {
+      if (this.failNextGroupMutation) {
+        this.failNextGroupMutation = false;
+        return Promise.reject(new Error("Fictional Cognito mutation failure"));
+      }
       const user = byUsername();
       if (user && value.input.GroupName)
         user.groups = [...new Set([...user.groups, value.input.GroupName])];
       return Promise.resolve({});
     }
     if (value.constructor.name === "AdminRemoveUserFromGroupCommand") {
+      if (this.failNextGroupMutation) {
+        this.failNextGroupMutation = false;
+        return Promise.reject(new Error("Fictional Cognito mutation failure"));
+      }
       const user = byUsername();
       if (user && value.input.GroupName)
         user.groups = user.groups.filter(
@@ -246,8 +256,10 @@ class FakeCognitoAccessClient {
       if (index >= 0) this.users.splice(index, 1);
       return Promise.resolve({});
     }
-    if (value.constructor.name === "AdminUserGlobalSignOutCommand")
+    if (value.constructor.name === "AdminUserGlobalSignOutCommand") {
+      if (value.input.Username) this.globalSignOuts.push(value.input.Username);
       return Promise.resolve({});
+    }
     return Promise.reject(new Error("Unexpected fictional Cognito command"));
   }
 }
@@ -317,6 +329,171 @@ function cookie(response: {
 }
 
 describe("public/member API security flow", () => {
+  it("revokes sessions tied to a removed email while preserving other mailbox and person-scoped sessions", async () => {
+    const fixture = await executor.transaction(async (transaction) => {
+      const person = await transaction.query<{ id: string }>(
+        `INSERT INTO people(display_name, normalized_display_name, consent_version, consent_accepted_at)
+         VALUES ('Session Boundary Fiction', 'session boundary fiction', $1, now())
+         RETURNING id::text`,
+        [CONSENT_VERSION],
+      );
+      const personId = person.rows[0]!.id;
+      const emails = await transaction.query<{
+        id: string;
+        normalized_email: string;
+      }>(
+        `INSERT INTO person_emails(person_id, display_email, normalized_email, verified_at, is_primary)
+         VALUES
+           ($1::uuid, 'alpha-session@example.invalid', 'alpha-session@example.invalid', now(), true),
+           ($1::uuid, 'beta-session@example.invalid', 'beta-session@example.invalid', now(), false)
+         RETURNING id::text, normalized_email`,
+        [personId],
+      );
+      return { personId, emails: emails.rows };
+    });
+    const alphaRaw = `alpha-member-session-${Date.now()}`;
+    const betaRaw = `beta-member-session-${Date.now()}`;
+    const personScopedRaw = `person-scoped-session-${Date.now()}`;
+    const betaCsrf = `beta-csrf-${Date.now()}`;
+    const sessionRows = [
+      [
+        alphaRaw,
+        "alpha-session@example.invalid",
+        "alpha-session@example.invalid",
+        keyedHash(`alpha-csrf-${Date.now()}`, config.SESSION_HMAC_KEY),
+      ],
+      [
+        betaRaw,
+        "beta-session@example.invalid",
+        "beta-session@example.invalid",
+        keyedHash(betaCsrf, config.SESSION_HMAC_KEY),
+      ],
+      [
+        personScopedRaw,
+        null,
+        null,
+        keyedHash(`person-csrf-${Date.now()}`, config.SESSION_HMAC_KEY),
+      ],
+    ] as const;
+    for (const [raw, mailbox, display, csrfHash] of sessionRows) {
+      await executor.query(
+        `INSERT INTO member_sessions(session_hash, mailbox_normalized_email, mailbox_display_email,
+           selected_person_id, csrf_hash, issued_at, last_seen_at, idle_expires_at, absolute_expires_at)
+         VALUES ($1, $2, $3, $4::uuid, $5, now(), now(), now() + interval '1 day', now() + interval '1 day')`,
+        [
+          keyedHash(raw, config.SESSION_HMAC_KEY),
+          mailbox,
+          display,
+          fixture.personId,
+          csrfHash,
+        ],
+      );
+    }
+    const alphaCookie = `__Host-gis_member_session=${alphaRaw}`;
+    const betaCookie = `__Host-gis_member_session=${betaRaw}`;
+    const personScopedCookie = `__Host-gis_member_session=${personScopedRaw}`;
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: alphaCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
+      const quotaResponses = await Promise.all(
+        Array.from({ length: 6 }, (_, index) =>
+          app.inject({
+            method: "POST",
+            url: "/api/member/emails",
+            headers: {
+              ...origin,
+              cookie: betaCookie,
+              "x-csrf-token": betaCsrf,
+            },
+            payload: { email: `quota-${index}@example.invalid` },
+          }),
+        ),
+      );
+      expect(
+        quotaResponses.filter((response) => response.statusCode === 200),
+      ).toHaveLength(5);
+      expect(
+        quotaResponses.filter((response) => response.statusCode === 429),
+      ).toHaveLength(1);
+      const alphaEmail = fixture.emails.find(
+        (candidate) =>
+          candidate.normalized_email === "alpha-session@example.invalid",
+      )!;
+      const removed = await app.inject({
+        method: "DELETE",
+        url: `/api/member/emails/${alphaEmail.id}`,
+        headers: { ...origin, cookie: betaCookie, "x-csrf-token": betaCsrf },
+      });
+      expect(removed.statusCode).toBe(200);
+      expect(removed.json()).toEqual({ removed: true, signedOut: false });
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: alphaCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+      const betaSession = await app.inject({
+        method: "GET",
+        url: "/api/member/session",
+        headers: { cookie: betaCookie },
+      });
+      expect(betaSession.statusCode).toBe(200);
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: personScopedCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
+      await executor.query(
+        `INSERT INTO person_emails(person_id, display_email, normalized_email, verified_at, is_primary)
+         VALUES ($1::uuid, 'gamma-session@example.invalid', 'gamma-session@example.invalid', now(), false)`,
+        [fixture.personId],
+      );
+      const betaEmail = fixture.emails.find(
+        (candidate) =>
+          candidate.normalized_email === "beta-session@example.invalid",
+      )!;
+      const selfRemoval = await app.inject({
+        method: "DELETE",
+        url: `/api/member/emails/${betaEmail.id}`,
+        headers: {
+          ...origin,
+          cookie: betaCookie,
+          "x-csrf-token": betaSession.json<{ csrfToken: string }>().csrfToken,
+        },
+      });
+      expect(selfRemoval.statusCode).toBe(200);
+      expect(selfRemoval.json()).toEqual({ removed: true, signedOut: true });
+      expect(String(selfRemoval.headers["set-cookie"])).toContain("Max-Age=0");
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: betaCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+    } finally {
+      await executor.query("DELETE FROM people WHERE id = $1::uuid", [
+        fixture.personId,
+      ]);
+    }
+  });
+
   it("returns the same neutral response for known and unknown addresses", async () => {
     const request = (address: string) =>
       app.inject({
@@ -1428,6 +1605,28 @@ describe("public/member API security flow", () => {
       expect(inviteAudit).not.toHaveProperty("actor_id");
 
       const lowerSubject = "30000000-0000-4000-8000-000000000002";
+      const lowerSessionRaw = `lower-staff-session-${Date.now()}`;
+      await cognitoExecutor.query(
+        `INSERT INTO staff_sessions(session_hash, cognito_subject, effective_groups,
+           effective_permissions, csrf_hash, issued_at, expires_at)
+         VALUES ($1, $2, ARRAY['gis-staff'], ARRAY['profile:search', 'profile:read', 'contact:read'],
+           $3, now(), now() + interval '1 day')`,
+        [
+          keyedHash(lowerSessionRaw, config.SESSION_HMAC_KEY),
+          lowerSubject,
+          keyedHash("lower-csrf", config.SESSION_HMAC_KEY),
+        ],
+      );
+      const lowerCookie = `__Host-gis_staff_session=${lowerSessionRaw}`;
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: lowerCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
       const groupsChanged = await cognitoApp.inject({
         method: "POST",
         url: `/api/staff/access/${lowerSubject}/groups`,
@@ -1438,6 +1637,47 @@ describe("public/member API security flow", () => {
       expect(
         cognito.users.find((user) => user.subject === lowerSubject)?.groups,
       ).toEqual(["gis-ministry-leader", "gis-privacy-auditor"]);
+      expect(cognito.globalSignOuts).toContain("staff@example.invalid");
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: lowerCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+
+      const failedMutationSessionRaw = `failed-mutation-session-${Date.now()}`;
+      await cognitoExecutor.query(
+        `INSERT INTO staff_sessions(session_hash, cognito_subject, effective_groups,
+           effective_permissions, csrf_hash, issued_at, expires_at)
+         VALUES ($1, $2, ARRAY['gis-ministry-leader'], ARRAY['profile:search', 'profile:read', 'contact:read'],
+           $3, now(), now() + interval '1 day')`,
+        [
+          keyedHash(failedMutationSessionRaw, config.SESSION_HMAC_KEY),
+          lowerSubject,
+          keyedHash("failed-mutation-csrf", config.SESSION_HMAC_KEY),
+        ],
+      );
+      const failedMutationCookie = `__Host-gis_staff_session=${failedMutationSessionRaw}`;
+      cognito.failNextGroupMutation = true;
+      const failedMutation = await cognitoApp.inject({
+        method: "POST",
+        url: `/api/staff/access/${lowerSubject}/groups`,
+        headers,
+        payload: { groups: ["gis-staff"] },
+      });
+      expect(failedMutation.statusCode).toBe(500);
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: failedMutationCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
 
       const disabled = await cognitoApp.inject({
         method: "POST",

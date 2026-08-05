@@ -129,6 +129,99 @@ export function loadConfig(
   return configSchema.parse(environment);
 }
 
+const dataApiRuntimeShape = {
+  AWS_REGION: z
+    .string()
+    .regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/u)
+    .default("us-east-1"),
+  RDS_RESOURCE_ARN: z.string().startsWith("arn:"),
+  RDS_SECRET_ARN: z.string().startsWith("arn:"),
+  RDS_DATABASE: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{0,62}$/u)
+    .default("gifts_in_service"),
+} as const;
+
+export const emailEventsConfigSchema = z.object(dataApiRuntimeShape).strict();
+
+export const lifecycleConfigSchema = z
+  .object({
+    ...dataApiRuntimeShape,
+    PUBLIC_BASE_URL: z.string().url(),
+    APP_DISPLAY_NAME: z.string().trim().min(2).max(80),
+    MAGIC_LINK_HMAC_KEY: z.string().min(32),
+    SESSION_HMAC_KEY: z.string().min(32),
+    SES_FROM_ADDRESS: z.string().email(),
+    SES_CONFIGURATION_SET: z.string().min(1).max(64),
+  })
+  .strict();
+
+export const reembedConfigSchema = z
+  .object({
+    ...dataApiRuntimeShape,
+    AI_ADAPTER: z.literal("bedrock"),
+    EMBEDDING_MODEL_ID: z.string().min(1),
+    EMBEDDING_DIMENSION: z.coerce
+      .number()
+      .int()
+      .refine((value) => [256, 512, 1024].includes(value)),
+  })
+  .strict();
+
+export const migrationConfigSchema = z
+  .object({
+    AWS_REGION: dataApiRuntimeShape.AWS_REGION,
+    RDS_RESOURCE_ARN: dataApiRuntimeShape.RDS_RESOURCE_ARN,
+    RDS_SECRET_ARN: dataApiRuntimeShape.RDS_SECRET_ARN,
+    RDS_MASTER_SECRET_ARN: z.string().startsWith("arn:"),
+    RDS_MIGRATION_SECRET_ARN: z.string().startsWith("arn:"),
+    RDS_DATABASE: dataApiRuntimeShape.RDS_DATABASE,
+    EMBEDDING_DIMENSION: z.coerce
+      .number()
+      .int()
+      .refine((value) => [256, 512, 1024].includes(value)),
+  })
+  .strict();
+
+function selectedEnvironment(
+  environment: NodeJS.ProcessEnv,
+  keys: readonly string[],
+): Record<string, string | undefined> {
+  return Object.fromEntries(keys.map((key) => [key, environment[key]]));
+}
+
+export function loadEmailEventsConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): z.infer<typeof emailEventsConfigSchema> {
+  return emailEventsConfigSchema.parse(
+    selectedEnvironment(environment, Object.keys(dataApiRuntimeShape)),
+  );
+}
+
+export function loadLifecycleConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): z.infer<typeof lifecycleConfigSchema> {
+  return lifecycleConfigSchema.parse(
+    selectedEnvironment(environment, Object.keys(lifecycleConfigSchema.shape)),
+  );
+}
+
+export function loadReembedConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): z.infer<typeof reembedConfigSchema> {
+  return reembedConfigSchema.parse(
+    selectedEnvironment(environment, Object.keys(reembedConfigSchema.shape)),
+  );
+}
+
+export function loadMigrationConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): z.infer<typeof migrationConfigSchema> {
+  return migrationConfigSchema.parse(
+    selectedEnvironment(environment, Object.keys(migrationConfigSchema.shape)),
+  );
+}
+
 export function publicConfig(config: AppConfig) {
   return {
     appName: config.APP_DISPLAY_NAME,

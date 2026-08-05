@@ -4,6 +4,12 @@ module "naming" {
   extra_tags  = var.extra_tags
 }
 
+data "aws_caller_identity" "current" {}
+
+locals {
+  application_permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/gis-application-boundary"
+}
+
 resource "terraform_data" "production_preflight" {
   input = var.privacy_preflight_confirmed
   lifecycle {
@@ -14,6 +20,13 @@ resource "terraform_data" "production_preflight" {
     precondition {
       condition     = var.environment != "prod" || var.ses_production_ready
       error_message = "Production blocked: SES verified identity and production access are not confirmed."
+    }
+    precondition {
+      condition = var.environment != "prod" || (
+        can(regex("^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$", var.custom_domain_name)) &&
+        can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
+      )
+      error_message = "Production blocked: a valid custom domain and managed Route 53 zone ID are required so CloudFront can enforce the production TLS policy on the approved hostname."
     }
   }
 }
@@ -186,6 +199,7 @@ module "api" {
   api_id                     = module.api_gateway.api_id
   api_endpoint               = module.api_gateway.api_endpoint
   api_execution_arn          = module.api_gateway.execution_arn
+  permissions_boundary_arn   = local.application_permissions_boundary_arn
   depends_on                 = [terraform_data.production_preflight]
 }
 
@@ -230,6 +244,7 @@ module "scheduling" {
   email_event_queue_arn           = module.ses.event_queue_arn
   reembed_function_role_name      = module.api.function_role_names.reembed
   email_events_function_role_name = module.api.function_role_names.email_events
+  permissions_boundary_arn        = local.application_permissions_boundary_arn
 }
 
 module "observability" {

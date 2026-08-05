@@ -3,7 +3,7 @@ import {
   SecretsManagerClient,
 } from "@aws-sdk/client-secrets-manager";
 import { DataApiExecutor, type SqlExecutor } from "@gis/db";
-import { loadConfig } from "@gis/shared";
+import { loadMigrationConfig } from "@gis/shared";
 import { fileURLToPath } from "node:url";
 import { runDataApiMigrations } from "./migrations.js";
 
@@ -48,15 +48,7 @@ async function reconcileRole(
 }
 
 export async function handler(): Promise<{ applied: string[] }> {
-  const config = loadConfig();
-  if (
-    !config.RDS_RESOURCE_ARN ||
-    !config.RDS_MASTER_SECRET_ARN ||
-    !config.RDS_MIGRATION_SECRET_ARN ||
-    !config.RDS_SECRET_ARN
-  ) {
-    throw new Error("MigrationDataApiConfigurationMissing");
-  }
+  const config = loadMigrationConfig();
   const executor = new DataApiExecutor({
     resourceArn: config.RDS_RESOURCE_ARN,
     secretArn: config.RDS_MASTER_SECRET_ARN,

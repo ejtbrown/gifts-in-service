@@ -48,8 +48,9 @@ export function PrivacyNoticeContent({
         search only when needed to provide that feature.
       </p>
       <p>
-        Unfinished questions and answers, the latest draft, and short notes that
-        help the assistant remember what you have already said are saved in an{" "}
+        Unfinished questions and answers, any proposal shown inside the
+        resumable conversation, and short notes that help the assistant remember
+        what you have already said are saved in an{" "}
         <PlainLanguageTerm
           title="Encryption"
           explanation="Encryption scrambles stored information. People or systems without the right digital key cannot read it."
@@ -57,11 +58,17 @@ export function PrivacyNoticeContent({
           encrypted
         </PlainLanguageTerm>{" "}
         database for no more than 30 days. This lets you return without starting
-        over. Through Gifts in Service, only you can reach this information
-        after securely signing in to your profile. It is not available in staff
-        search or site-use tracking, and the application does not put it in its
-        logs or error reports. It is deleted when you approve your profile or
-        when the 30 days end.
+        over. A separate draft opened on the final-review page after you select{" "}
+        <strong>Create a draft</strong> stays only in the current browser tab
+        and is lost if you reload or close it.
+      </p>
+      <p>
+        Anyone who can use a verified email address associated with your profile
+        can reach the saved unfinished conversation. If you use a shared
+        mailbox, anyone with access to that mailbox may be able to open it. It
+        is not available in staff search or site-use tracking, and the
+        application does not put it in its logs or error reports. It is deleted
+        when you approve your profile or when the 30 days end.
       </p>
       <p>
         Before the church launches the service, it must confirm that the company
@@ -86,12 +93,15 @@ export function PrivacyNoticeContent({
         The service asks once a year whether the profile is still correct. If
         the person does not respond, the profile is hidden from search after 58
         weeks and permanently deleted after 62 weeks. A deletion removes the
-        profile, contact information, signed-in devices, sign-in links, and
-        unfinished conversation from the working service. A small security
-        record may remain, but it does not contain the person's name, email, or
-        profile. Protected backup copies may contain deleted information for up
-        to 35 more days. Those copies are not available through the normal
-        service and are removed as old backups expire.
+        profile, contact information, unfinished conversation, and access to
+        that profile from signed-in devices and sign-in links. A mailbox-wide
+        sign-in link may still open another profile associated with the same
+        address or start a new profile, but it cannot reopen the deleted
+        profile. A small security record may remain, but it does not contain the
+        person's name, email, or profile. Protected backup copies may contain
+        deleted information for up to 35 more days. Those copies are not
+        available through the normal service and are removed as old backups
+        expire.
       </p>
       <Heading>Contact</Heading>
       <p>
@@ -152,9 +162,10 @@ export function AiUseContent({
       </p>
       <Heading>What is kept temporarily</Heading>
       <p>
-        Unfinished interview questions and answers, the latest proposal, the
-        simple progress estimate, and short notes that help the assistant
-        remember what you said or chose to skip are saved in an{" "}
+        Unfinished interview questions and answers, any proposal shown inside
+        the resumable conversation, the simple progress estimate, and short
+        notes that help the assistant remember what you said or chose to skip
+        are saved in an{" "}
         <PlainLanguageTerm
           title="Encryption"
           explanation="Encryption scrambles stored information. People or systems without the right digital key cannot read it."
@@ -162,9 +173,16 @@ export function AiUseContent({
           encrypted
         </PlainLanguageTerm>{" "}
         database for no more than 30 days. This lets you return after closing
-        the page or requesting a new sign-in email. Through Gifts in Service,
-        only you can reach this unfinished conversation after securely signing
-        in. Staff cannot search it or use it to rate you. It is deleted when you
+        the page or requesting a new sign-in email. A separate draft opened on
+        the final-review page after selecting <strong>Create a draft</strong>{" "}
+        stays only in the current browser tab and is lost if it is reloaded or
+        closed.
+      </p>
+      <p>
+        Anyone who can use a verified email address associated with the profile
+        can reach the saved unfinished conversation. If the address is a shared
+        mailbox, anyone with access to that mailbox may be able to open it.
+        Staff cannot search it or use it to rate you. It is deleted when you
         approve and save the profile or when the 30 days end.
       </p>
       <Heading>How staff search works</Heading>
@@ -172,9 +190,11 @@ export function AiUseContent({
         When staff search, the service looks for exact words, related meanings,
         and close spellings only in approved profiles. AI may then reorder those
         possible matches and explain why a profile may fit the request. Names
-        and contact details are not sent to the AI search tool. Every
-        explanation must use exact words from the approved profile. If the AI
-        gives an unusable answer, the service uses fixed non-AI rules instead.
+        and contact details are not sent to the AI search tool. Every result
+        includes evidence copied exactly from the approved profile. The AI may
+        write a separate explanation of the possible match. If the AI gives
+        unusable evidence or an unusable answer, the service uses fixed non-AI
+        rules instead.
       </p>
       <Heading>Limits</Heading>
       <p>

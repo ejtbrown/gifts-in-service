@@ -49,4 +49,32 @@ describe("GitHub OIDC bootstrap trust", () => {
     expect(deployPolicy).toContain('"s3:PutObject"');
     expect(deployPolicy).toContain('"s3:DeleteObject"');
   });
+
+  it("can create and pass only prefixed roles constrained by the application boundary", async () => {
+    const [bootstrap, api, scheduling] = await Promise.all([
+      readFile(resolve(repositoryRoot, "infra/bootstrap/main.tf"), "utf8"),
+      readFile(resolve(repositoryRoot, "infra/modules/api/main.tf"), "utf8"),
+      readFile(
+        resolve(repositoryRoot, "infra/modules/scheduling/main.tf"),
+        "utf8",
+      ),
+    ]);
+
+    const broadSurface = bootstrap.match(
+      /sid = "CurrentTerraformSurface"[\s\S]*?resources = \["\*"\]/u,
+    )?.[0];
+    expect(broadSurface).toBeDefined();
+    expect(broadSurface).not.toContain('"iam:CreateRole"');
+    expect(bootstrap).toContain('variable = "iam:PermissionsBoundary"');
+    expect(bootstrap).toContain(
+      'resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/gis-*"]',
+    );
+    expect(bootstrap).not.toContain('"iam:DeleteRolePermissionsBoundary"');
+    expect(api).toContain(
+      "permissions_boundary = var.permissions_boundary_arn",
+    );
+    expect(scheduling).toContain(
+      "permissions_boundary = var.permissions_boundary_arn",
+    );
+  });
 });

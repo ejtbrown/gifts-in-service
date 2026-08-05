@@ -52,3 +52,4 @@ variable "log_retention_days" { type = number }
 variable "api_id" { type = string }
 variable "api_endpoint" { type = string }
 variable "api_execution_arn" { type = string }
+variable "permissions_boundary_arn" { type = string }

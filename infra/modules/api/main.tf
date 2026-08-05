@@ -7,8 +7,13 @@ locals {
     reembed      = { handler = "app/index.handler", timeout = 300, memory = 1024 }
     migration    = { handler = "app/index.handler", timeout = 300, memory = 1024 }
   }
-  common_environment = {
-    APP_ENV                   = "prod"
+  data_api_environment = {
+    APP_ENV          = "prod"
+    RDS_RESOURCE_ARN = var.rds_cluster_arn
+    RDS_SECRET_ARN   = var.rds_application_secret_arn
+    RDS_DATABASE     = var.database_name
+  }
+  api_environment = merge(local.data_api_environment, {
     PORT                      = "3001"
     PUBLIC_BASE_URL           = var.public_base_url
     ALLOWED_ORIGINS           = var.allowed_origins
@@ -20,34 +25,61 @@ locals {
     MAILPIT_SMTP_URL          = "smtp://mailpit.invalid:1025"
     SES_FROM_ADDRESS          = var.ses_from_address
     SES_CONFIGURATION_SET     = var.ses_configuration_set
-    MAGIC_LINK_HMAC_KEY       = var.magic_hmac_key
     SESSION_HMAC_KEY          = var.session_hmac_key
     ORIGIN_VERIFY_SECRET      = var.origin_verify_secret
     AI_ADAPTER                = "bedrock"
     EMAIL_ADAPTER             = "ses"
     STAFF_AUTH_ADAPTER        = "cognito"
-    COGNITO_USER_POOL_ID      = var.cognito_user_pool_id
-    COGNITO_CLIENT_ID         = var.cognito_client_id
-    COGNITO_CLIENT_SECRET     = var.cognito_client_secret
     INTERVIEW_MODEL_ID        = var.interview_model_id
     SEARCH_MODEL_ID           = var.search_model_id
     EMBEDDING_MODEL_ID        = var.embedding_model_id
     EMBEDDING_DIMENSION       = tostring(var.embedding_dimension)
     BEDROCK_GUARDRAIL_ID      = var.guardrail_id
     BEDROCK_GUARDRAIL_VERSION = var.guardrail_version
-    RDS_RESOURCE_ARN          = var.rds_cluster_arn
-    RDS_SECRET_ARN            = var.rds_application_secret_arn
-    RDS_DATABASE              = var.database_name
+  })
+  function_environments = {
+    public = merge(local.api_environment, {
+      MAGIC_LINK_HMAC_KEY   = var.magic_hmac_key
+      COGNITO_USER_POOL_ID  = "not-configured-on-public-surface"
+      COGNITO_CLIENT_ID     = "not-configured-on-public-surface"
+      COGNITO_CLIENT_SECRET = "not-configured-on-public-surface"
+    })
+    staff = merge(local.api_environment, {
+      MAGIC_LINK_HMAC_KEY   = "not-configured-on-staff-surface-000000"
+      COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
+      COGNITO_CLIENT_ID     = var.cognito_client_id
+      COGNITO_CLIENT_SECRET = var.cognito_client_secret
+    })
+    lifecycle = merge(local.data_api_environment, {
+      PUBLIC_BASE_URL       = var.public_base_url
+      APP_DISPLAY_NAME      = "Gifts in Service"
+      MAGIC_LINK_HMAC_KEY   = var.magic_hmac_key
+      SESSION_HMAC_KEY      = var.session_hmac_key
+      SES_FROM_ADDRESS      = var.ses_from_address
+      SES_CONFIGURATION_SET = var.ses_configuration_set
+    })
+    email_events = local.data_api_environment
+    reembed = merge(local.data_api_environment, {
+      AI_ADAPTER          = "bedrock"
+      EMBEDDING_MODEL_ID  = var.embedding_model_id
+      EMBEDDING_DIMENSION = tostring(var.embedding_dimension)
+    })
+    migration = merge(local.data_api_environment, {
+      RDS_MASTER_SECRET_ARN    = var.rds_master_secret_arn
+      RDS_MIGRATION_SECRET_ARN = var.rds_migration_secret_arn
+      EMBEDDING_DIMENSION      = tostring(var.embedding_dimension)
+    })
   }
 }
 
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "function" {
-  for_each           = local.functions
-  name               = "${var.prefix}-${replace(each.key, "_", "-")}-lambda"
-  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = var.tags
+  for_each             = local.functions
+  name                 = "${var.prefix}-${replace(each.key, "_", "-")}-lambda"
+  assume_role_policy   = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  permissions_boundary = var.permissions_boundary_arn
+  tags                 = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "logs" {
@@ -78,17 +110,29 @@ resource "aws_iam_role_policy" "migration" {
 }
 
 resource "aws_iam_role_policy" "bedrock" {
-  for_each = toset(["public", "staff", "reembed"])
+  for_each = toset(["public", "staff"])
   name     = "bedrock"
   role     = aws_iam_role.function[each.key].id
   policy = jsonencode({ Version = "2012-10-17", Statement = [{
-    Effect   = "Allow", Action = ["bedrock:InvokeModel", "bedrock:ApplyGuardrail"],
-    Resource = ["arn:aws:bedrock:*::foundation-model/${trimprefix(var.interview_model_id, "us.")}", "arn:aws:bedrock:*::foundation-model/${trimprefix(var.search_model_id, "us.")}", "arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}", "arn:aws:bedrock:${var.region}:*:inference-profile/${var.interview_model_id}", "arn:aws:bedrock:${var.region}:*:inference-profile/${var.search_model_id}", "arn:aws:bedrock:${var.region}:*:guardrail/${var.guardrail_id}"]
+    Effect = "Allow", Action = ["bedrock:InvokeModel", "bedrock:ApplyGuardrail"],
+    Resource = concat(
+      ["arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}", "arn:aws:bedrock:${var.region}:*:guardrail/${var.guardrail_id}"],
+      each.key == "public" ? ["arn:aws:bedrock:*::foundation-model/${trimprefix(var.interview_model_id, "us.")}", "arn:aws:bedrock:${var.region}:*:inference-profile/${var.interview_model_id}"] : ["arn:aws:bedrock:*::foundation-model/${trimprefix(var.search_model_id, "us.")}", "arn:aws:bedrock:${var.region}:*:inference-profile/${var.search_model_id}"]
+    )
+  }] })
+}
+
+resource "aws_iam_role_policy" "reembed_bedrock" {
+  name = "bedrock-embedding-only"
+  role = aws_iam_role.function["reembed"].id
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{
+    Effect   = "Allow", Action = ["bedrock:InvokeModel"],
+    Resource = "arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"
   }] })
 }
 
 resource "aws_iam_role_policy" "ses" {
-  for_each = toset(["public", "staff", "lifecycle"])
+  for_each = toset(["public", "lifecycle"])
   name     = "ses-send"
   role     = aws_iam_role.function[each.key].id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
@@ -135,10 +179,7 @@ resource "aws_lambda_function" "function" {
   timeout          = each.value.timeout
   memory_size      = each.value.memory
   environment {
-    variables = merge(local.common_environment, each.key == "migration" ? {
-      RDS_MASTER_SECRET_ARN    = var.rds_master_secret_arn
-      RDS_MIGRATION_SECRET_ARN = var.rds_migration_secret_arn
-    } : {})
+    variables = local.function_environments[each.key]
   }
   tracing_config { mode = "PassThrough" }
   reserved_concurrent_executions = each.key == "public" ? 20 : each.key == "staff" ? 10 : 2

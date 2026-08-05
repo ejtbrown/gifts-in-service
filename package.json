@@ -28,7 +28,9 @@
     "infra:validate": "bash scripts/terraform-validate.sh",
     "preflight": "tsx scripts/preflight.ts",
     "audit:repo": "bash scripts/repository-safety-scan.sh",
-    "audit:dependencies": "pnpm audit --prod --audit-level high"
+    "audit:dependencies": "pnpm audit --prod --audit-level high",
+    "audit:signatures": "pnpm audit signatures",
+    "audit:sbom": "pnpm sbom --prod --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --out dist/sbom.cdx.json"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
