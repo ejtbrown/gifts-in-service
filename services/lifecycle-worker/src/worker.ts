@@ -161,6 +161,12 @@ export async function runLifecycle(
     [now],
   );
   await executor.query(
+    `DELETE FROM staff_trusted_devices
+     WHERE expires_at < $1::timestamptz - interval '1 day'
+       OR revoked_at < $1::timestamptz - interval '1 day'`,
+    [now],
+  );
+  await executor.query(
     `UPDATE audit_query_payloads SET protected_query = '[REDACTED]', redacted_at = $1
      WHERE expires_at <= $1 AND redacted_at IS NULL`,
     [now],

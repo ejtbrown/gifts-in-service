@@ -52,6 +52,7 @@ function surfaceIsolationPlugin(name: string): Plugin {
                  export class AdminDeleteUserCommand {}
                  export class AdminDisableUserCommand {}
                  export class AdminEnableUserCommand {}
+                 export class AdminForgetDeviceCommand {}
                  export class AdminListGroupsForUserCommand {}
                  export class AdminRemoveUserFromGroupCommand {}
                  export class AdminUserGlobalSignOutCommand {}
@@ -59,8 +60,10 @@ function surfaceIsolationPlugin(name: string): Plugin {
                  export class AdminInitiateAuthCommand {}
                  export class AdminRespondToAuthChallengeCommand {}
                  export class AssociateSoftwareTokenCommand {}
+                 export class ConfirmDeviceCommand {}
                  export class ConfirmForgotPasswordCommand {}
                  export class ForgotPasswordCommand {}
+                 export class UpdateDeviceStatusCommand {}
                  export class VerifySoftwareTokenCommand {}`
               : `export class MailpitEmailAdapter {}
                  export class SesEmailAdapter {}

@@ -38,6 +38,58 @@ afterAll(async () => {
 });
 
 describe("time-controlled stale profile lifecycle", () => {
+  it("removes expired and revoked trusted-browser credentials after the safety window", async () => {
+    const current = new Date("2026-08-05T12:00:00.000Z");
+    const hashes: [string, string, string] = [
+      sha256("trusted-browser-expired"),
+      sha256("trusted-browser-revoked"),
+      sha256("trusted-browser-active"),
+    ];
+    await executor.query(
+      `INSERT INTO staff_trusted_devices(
+         trust_hash, cognito_subject, cognito_username, login_identifier,
+         device_key, device_group_key, device_credentials_ciphertext,
+         created_at, last_used_at, expires_at, revoked_at)
+       VALUES
+         ($1, 'subject-expired', 'user-expired', 'expired@example.invalid',
+           'device-expired', 'group-expired', $4, $5 - interval '30 days',
+           $5 - interval '30 days', $5 - interval '2 days', NULL),
+         ($2, 'subject-revoked', 'user-revoked', 'revoked@example.invalid',
+           'device-revoked', 'group-revoked', $4, $5 - interval '10 days',
+           $5 - interval '10 days', $5 + interval '20 days', $5 - interval '2 days'),
+         ($3, 'subject-active', 'user-active', 'active@example.invalid',
+           'device-active', 'group-active', $4, $5 - interval '1 day',
+           $5 - interval '1 day', $5 + interval '29 days', NULL)`,
+      [hashes[0], hashes[1], hashes[2], "x".repeat(40), current],
+    );
+
+    await runLifecycle(
+      executor,
+      email,
+      {
+        publicBaseUrl: "https://fictional.invalid",
+        appName: "Gifts in Service",
+        tokenHmacKey: "t".repeat(32),
+        purgeHmacKey: "p".repeat(32),
+        backupRetentionDays: 35,
+      },
+      current,
+    );
+
+    const remaining = await executor.query<{ trust_hash: string }>(
+      `SELECT trust_hash FROM staff_trusted_devices
+       WHERE trust_hash = ANY($1::text[])`,
+      [hashes],
+    );
+    expect(remaining.rows.map((row) => row.trust_hash.trim())).toEqual([
+      hashes[2],
+    ]);
+    await executor.query(
+      "DELETE FROM staff_trusted_devices WHERE trust_hash = ANY($1::text[])",
+      [hashes],
+    );
+  });
+
   it("removes pending interviews at their 30-day expiry", async () => {
     const startedAt = new Date("2026-01-01T00:00:00.000Z");
     const address = `expired-${randomUUID()}@example.invalid`;

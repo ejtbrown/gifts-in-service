@@ -40,4 +40,5 @@ export interface StaffMe {
   groups: StaffGroup[];
   permissions: string[];
   csrfToken: string;
+  trustedBrowser: boolean;
 }

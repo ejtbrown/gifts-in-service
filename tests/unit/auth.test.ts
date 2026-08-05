@@ -9,7 +9,10 @@ import {
   normalizeDisplayName,
   normalizeEmail,
   STAFF_SESSION_TTL_SECONDS,
+  STAFF_TRUST_COOKIE,
+  STAFF_TRUST_TTL_SECONDS,
   staffCookieOptions,
+  staffTrustCookieOptions,
   validateCsrf,
   validateOrigin,
 } from "../../packages/auth/src/index.js";
@@ -90,6 +93,18 @@ describe("authentication primitives", () => {
       sameSite: "lax",
       path: "/",
       maxAge: 86_400,
+    });
+  });
+
+  it("uses a separate host-only cookie for fixed 30-day browser trust", () => {
+    expect(STAFF_TRUST_COOKIE).toBe("__Host-gis_staff_trusted_browser");
+    expect(STAFF_TRUST_TTL_SECONDS).toBe(2_592_000);
+    expect(staffTrustCookieOptions()).toMatchObject({
+      secure: true,
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+      maxAge: 2_592_000,
     });
   });
 });
