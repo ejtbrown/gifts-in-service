@@ -52,14 +52,14 @@ describe("time-controlled stale profile lifecycle", () => {
          created_at, last_used_at, expires_at, revoked_at)
        VALUES
          ($1, 'subject-expired', 'user-expired', 'expired@example.invalid',
-           'device-expired', 'group-expired', $4, $5 - interval '30 days',
-           $5 - interval '30 days', $5 - interval '2 days', NULL),
+           'device-expired', 'group-expired', $4, $5::timestamptz - interval '30 days',
+           $5::timestamptz - interval '30 days', $5::timestamptz - interval '2 days', NULL),
          ($2, 'subject-revoked', 'user-revoked', 'revoked@example.invalid',
-           'device-revoked', 'group-revoked', $4, $5 - interval '10 days',
-           $5 - interval '10 days', $5 + interval '20 days', $5 - interval '2 days'),
+           'device-revoked', 'group-revoked', $4, $5::timestamptz - interval '10 days',
+           $5::timestamptz - interval '10 days', $5::timestamptz + interval '20 days', $5::timestamptz - interval '2 days'),
          ($3, 'subject-active', 'user-active', 'active@example.invalid',
-           'device-active', 'group-active', $4, $5 - interval '1 day',
-           $5 - interval '1 day', $5 + interval '29 days', NULL)`,
+           'device-active', 'group-active', $4, $5::timestamptz - interval '1 day',
+           $5::timestamptz - interval '1 day', $5::timestamptz + interval '29 days', NULL)`,
       [hashes[0], hashes[1], hashes[2], "x".repeat(40), current],
     );
 

@@ -53,7 +53,8 @@ export function decryptShortLivedSecret(
   keyMaterial: string,
 ): string {
   const payload = Buffer.from(value, "base64url");
-  if (payload.length < 29) throw new Error("EncryptedSecretInvalid");
+  if (payload.length < 29 || payload.toString("base64url") !== value)
+    throw new Error("EncryptedSecretInvalid");
   const key = createHash("sha256").update(keyMaterial, "utf8").digest();
   const decipher = createDecipheriv(
     "aes-256-gcm",

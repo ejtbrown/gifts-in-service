@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   constantTimeEqual,
+  decryptShortLivedSecret,
+  encryptShortLivedSecret,
   generateOpaqueSecret,
   isTokenUsable,
   keyedHash,
@@ -72,6 +74,16 @@ describe("authentication primitives", () => {
     expect(validateOrigin(undefined, ["https://church.example"])).toBe(false);
     expect(validateCsrf(raw.raw, raw.hash, key)).toBe(true);
     expect(validateCsrf("forged", raw.hash, key)).toBe(false);
+  });
+
+  it("rejects non-canonical encrypted transaction encodings", () => {
+    const key = "e".repeat(32);
+    const encrypted = encryptShortLivedSecret("ok", key);
+    expect(encrypted.length % 4).toBe(0);
+    expect(decryptShortLivedSecret(encrypted, key)).toBe("ok");
+    expect(() => decryptShortLivedSecret(`${encrypted}x`, key)).toThrow(
+      "EncryptedSecretInvalid",
+    );
   });
 
   it("issues member cookies for the fixed 30-day session lifetime", () => {
