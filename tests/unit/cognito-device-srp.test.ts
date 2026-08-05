@@ -27,6 +27,9 @@ describe("Cognito remembered-device SRP", () => {
     );
     expect(verifier.salt).toBe("APDx8vP09fb3+Pn6+/z9/v8=");
     expect(
+      // This digest keeps the deterministic Cognito SRP test vector compact;
+      // it does not hash or store a user password.
+      // codeql[js/insufficient-password-hash]
       createHash("sha256")
         .update(Buffer.from(verifier.passwordVerifier, "base64"))
         .digest("hex"),

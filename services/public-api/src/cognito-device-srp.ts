@@ -31,6 +31,9 @@ const G = 2n;
 const DERIVED_KEY_INFO = Buffer.from("Caldera Derived Key\u0001", "utf8");
 
 function sha256(input: BinaryLike): Buffer {
+  // Cognito's SRP protocol mandates SHA-256 over a random 320-bit device
+  // secret. This is protocol derivation, not storage of a user password.
+  // codeql[js/insufficient-password-hash]
   return createHash("sha256").update(input).digest();
 }
 
