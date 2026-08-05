@@ -439,8 +439,8 @@ describe("public/member API security flow", () => {
               ...origin,
               cookie: betaCookie,
               "x-csrf-token": betaCsrf,
-              "x-forwarded-for": "198.51.100.42",
             },
+            remoteAddress: "198.51.100.42",
           }),
         ),
       );
