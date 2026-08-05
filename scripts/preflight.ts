@@ -67,8 +67,7 @@ if (process.env.CHECK_AWS_ENGINE_VERSION === "true") {
     release.aurora_postgresql_version,
   ]);
   const versions = result.DBEngineVersions as
-    | Array<{ EngineVersion?: string; Status?: string }>
-    | undefined;
+    Array<{ EngineVersion?: string; Status?: string }> | undefined;
   if (
     versions?.length !== 1 ||
     versions[0]?.EngineVersion !== release.aurora_postgresql_version ||
@@ -99,8 +98,7 @@ if (!production) {
     "get-model-invocation-logging-configuration",
   ]);
   const loggingConfig = logging.loggingConfig as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   if (
     loggingConfig &&
     Object.values(loggingConfig).some(

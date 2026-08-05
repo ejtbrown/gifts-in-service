@@ -8,9 +8,7 @@ import type { StaffMe } from "./types.js";
 import type { StaffGroup } from "@gis/shared";
 
 type StaffAuthChallenge =
-  | "NEW_PASSWORD_REQUIRED"
-  | "SOFTWARE_TOKEN_MFA"
-  | "MFA_SETUP";
+  "NEW_PASSWORD_REQUIRED" | "SOFTWARE_TOKEN_MFA" | "MFA_SETUP";
 
 type StaffAuthResponse =
   | {

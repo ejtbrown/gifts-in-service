@@ -11,9 +11,7 @@ import {
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export type StaffAuthChallenge =
-  | "NEW_PASSWORD_REQUIRED"
-  | "SOFTWARE_TOKEN_MFA"
-  | "MFA_SETUP";
+  "NEW_PASSWORD_REQUIRED" | "SOFTWARE_TOKEN_MFA" | "MFA_SETUP";
 
 export type StaffAuthStep =
   | { authenticated: true; idToken: string }
