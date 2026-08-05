@@ -40,11 +40,13 @@ test("Cognito password, permanent-password, and TOTP setup stay in the applicati
     const body = route.request().postDataJSON() as {
       transaction: string;
       response: string;
+      trustBrowser: boolean;
     };
     if (challengeCount === 1) {
       expect(body).toEqual({
         transaction: "encrypted-new-password-transaction",
         response: "Fictional-Permanent-17!",
+        trustBrowser: false,
       });
       await route.fulfill({
         status: 200,
@@ -60,6 +62,7 @@ test("Cognito password, permanent-password, and TOTP setup stay in the applicati
     expect(body).toEqual({
       transaction: "encrypted-totp-setup-transaction",
       response: "123456",
+      trustBrowser: true,
     });
     await route.fulfill({
       status: 200,
@@ -80,6 +83,7 @@ test("Cognito password, permanent-password, and TOTP setup stay in the applicati
         groups: ["gis-staff"],
         permissions: ["profile:search", "profile:read", "contact:read"],
         csrfToken: "fictional-rotated-staff-csrf",
+        trustedBrowser: true,
       },
     });
   });
@@ -117,8 +121,16 @@ test("Cognito password, permanent-password, and TOTP setup stay in the applicati
     page.getByRole("img", { name: "QR code for authenticator setup" }),
   ).toBeVisible();
   await expect(page.getByText("JBSWY3DPEHPK3PXP")).toBeVisible();
+  const trustBrowser = page.getByRole("checkbox", {
+    name: /Trust this browser for 30 days/u,
+  });
+  await expect(trustBrowser).not.toBeChecked();
   const code = page.getByLabel("Six-digit code");
   await expect(code).toBeFocused();
+  await trustBrowser.check();
+  await expect(
+    page.getByText(/You will still enter your password after the 24-hour/u),
+  ).toBeVisible();
   await code.fill("12345");
   expect(challengeCount).toBe(1);
   await code.press("6");

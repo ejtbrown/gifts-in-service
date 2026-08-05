@@ -30,6 +30,23 @@ export interface StaffSession {
   csrfHash: string;
 }
 
+export interface StaffTrustedDevice {
+  trustHash: string;
+  subject: string;
+  cognitoUsername: string;
+  loginIdentifier: string;
+  deviceKey: string;
+  deviceGroupKey: string;
+  credentialsCiphertext: string;
+  expiresAt: Date;
+  revokedAt: Date | null;
+}
+
+export interface RevokedStaffTrustedDevice {
+  cognitoUsername: string;
+  deviceKey: string;
+}
+
 export class SecurityStore {
   constructor(readonly executor: SqlExecutor) {}
 
@@ -78,6 +95,62 @@ export class SecurityStore {
         input.verificationCycleId ?? null,
       ],
     );
+  }
+
+  async reserveAddEmailToken(
+    input: {
+      tokenHash: string;
+      personId: string;
+      normalizedEmail: string;
+      displayEmail: string;
+      abuseEmailHash: string;
+      expiresAt: Date;
+    },
+    since: Date,
+    maximumRequests: number,
+  ): Promise<boolean> {
+    return this.executor.transaction(async (transaction) => {
+      const lockKeys = [
+        `add-email:person:${input.personId}`,
+        `add-email:recipient:${input.abuseEmailHash}`,
+      ].sort();
+      for (const lockKey of lockKeys) {
+        await transaction.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [lockKey],
+        );
+      }
+      const counts = await transaction.query<{
+        person_count: string;
+        recipient_count: string;
+      }>(
+        `SELECT
+           count(*) FILTER (WHERE person_id = $1::uuid)::text AS person_count,
+           count(*) FILTER (WHERE abuse_email_hash = $2)::text AS recipient_count
+         FROM magic_link_tokens
+         WHERE purpose = 'ADD_EMAIL' AND issued_at >= $3::timestamptz`,
+        [input.personId, input.abuseEmailHash, since],
+      );
+      const count = counts.rows[0];
+      if (
+        Number(count?.person_count ?? 0) >= maximumRequests ||
+        Number(count?.recipient_count ?? 0) >= maximumRequests
+      )
+        return false;
+      await new SecurityStore(transaction).insertMagicToken({
+        tokenHash: input.tokenHash,
+        purpose: "ADD_EMAIL",
+        personId: input.personId,
+        normalizedEmail: input.normalizedEmail,
+        displayEmail: input.displayEmail,
+        pendingDisplayName: null,
+        consentVersion: null,
+        abuseEmailHash: input.abuseEmailHash,
+        abuseNetworkHash: null,
+        expiresAt: input.expiresAt,
+      });
+      return true;
+    });
   }
 
   async redeemMagicToken(
@@ -154,10 +227,22 @@ export class SecurityStore {
       verification_cycle_id: string | null;
       absolute_expires_at: Date;
     }>(
-      `UPDATE member_sessions SET last_seen_at = $2::timestamptz
-       WHERE session_hash = $1 AND revoked_at IS NULL AND idle_expires_at > $2 AND absolute_expires_at > $2
-       RETURNING session_hash, mailbox_normalized_email, mailbox_display_email, selected_person_id::text,
-         csrf_hash, verification_cycle_id::text, absolute_expires_at`,
+      `UPDATE member_sessions s SET last_seen_at = $2::timestamptz
+       WHERE s.session_hash = $1 AND s.revoked_at IS NULL
+         AND s.idle_expires_at > $2 AND s.absolute_expires_at > $2
+         AND (
+           s.selected_person_id IS NULL
+           OR s.mailbox_normalized_email IS NULL
+           OR EXISTS (
+             SELECT 1 FROM person_emails e
+             WHERE e.person_id = s.selected_person_id
+               AND e.normalized_email = s.mailbox_normalized_email
+               AND e.verified_at IS NOT NULL
+           )
+         )
+       RETURNING s.session_hash, s.mailbox_normalized_email, s.mailbox_display_email,
+         s.selected_person_id::text, s.csrf_hash, s.verification_cycle_id::text,
+         s.absolute_expires_at`,
       [sessionHash, now],
     );
     const row = result.rows[0];
@@ -318,5 +403,184 @@ export class SecurityStore {
       "UPDATE staff_sessions SET revoked_at = $2 WHERE session_hash = $1",
       [sessionHash, now],
     );
+  }
+
+  async getStaffTrustedDevice(
+    trustHash: string,
+  ): Promise<StaffTrustedDevice | null> {
+    const result = await this.executor.query<{
+      trust_hash: string;
+      cognito_subject: string;
+      cognito_username: string;
+      login_identifier: string;
+      device_key: string;
+      device_group_key: string;
+      device_credentials_ciphertext: string;
+      expires_at: Date;
+      revoked_at: Date | null;
+    }>(
+      `SELECT trust_hash, cognito_subject, cognito_username, login_identifier,
+         device_key, device_group_key, device_credentials_ciphertext, expires_at, revoked_at
+       FROM staff_trusted_devices WHERE trust_hash = $1`,
+      [trustHash],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          trustHash: row.trust_hash,
+          subject: row.cognito_subject,
+          cognitoUsername: row.cognito_username,
+          loginIdentifier: row.login_identifier,
+          deviceKey: row.device_key,
+          deviceGroupKey: row.device_group_key,
+          credentialsCiphertext: row.device_credentials_ciphertext,
+          expiresAt: row.expires_at,
+          revokedAt: row.revoked_at,
+        }
+      : null;
+  }
+
+  async createStaffTrustedDevice(input: {
+    trustHash: string;
+    subject: string;
+    cognitoUsername: string;
+    loginIdentifier: string;
+    deviceKey: string;
+    deviceGroupKey: string;
+    credentialsCiphertext: string;
+    now: Date;
+    expiresAt: Date;
+    maximumActiveDevices?: number;
+  }): Promise<RevokedStaffTrustedDevice[]> {
+    return this.executor.transaction(async (transaction) => {
+      await transaction.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`staff-trusted-devices:${input.subject}`],
+      );
+      const expired = await transaction.query<{
+        cognito_username: string;
+        device_key: string;
+      }>(
+        `UPDATE staff_trusted_devices SET revoked_at = $2::timestamptz
+         WHERE cognito_subject = $1 AND revoked_at IS NULL
+           AND expires_at <= $2::timestamptz
+         RETURNING cognito_username, device_key`,
+        [input.subject, input.now],
+      );
+      await transaction.query(
+        `INSERT INTO staff_trusted_devices(
+           trust_hash, cognito_subject, cognito_username, login_identifier,
+           device_key, device_group_key, device_credentials_ciphertext,
+           created_at, last_used_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $8::timestamptz, $9::timestamptz)`,
+        [
+          input.trustHash,
+          input.subject,
+          input.cognitoUsername,
+          input.loginIdentifier,
+          input.deviceKey,
+          input.deviceGroupKey,
+          input.credentialsCiphertext,
+          input.now,
+          input.expiresAt,
+        ],
+      );
+      const revoked = await transaction.query<{
+        cognito_username: string;
+        device_key: string;
+      }>(
+        `UPDATE staff_trusted_devices SET revoked_at = $2::timestamptz
+         WHERE trust_hash IN (
+           SELECT trust_hash FROM staff_trusted_devices
+           WHERE cognito_subject = $1 AND revoked_at IS NULL
+             AND expires_at > $2::timestamptz
+           ORDER BY created_at DESC, trust_hash DESC
+           OFFSET $3
+         )
+         RETURNING cognito_username, device_key`,
+        [input.subject, input.now, input.maximumActiveDevices ?? 5],
+      );
+      return [...expired.rows, ...revoked.rows].map((row) => ({
+        cognitoUsername: row.cognito_username,
+        deviceKey: row.device_key,
+      }));
+    });
+  }
+
+  async markStaffTrustedDeviceUsed(
+    trustHash: string,
+    subject: string,
+    now: Date,
+  ): Promise<boolean> {
+    const result = await this.executor.query(
+      `UPDATE staff_trusted_devices SET last_used_at = $3::timestamptz
+       WHERE trust_hash = $1 AND cognito_subject = $2 AND revoked_at IS NULL
+         AND expires_at > $3::timestamptz`,
+      [trustHash, subject, now],
+    );
+    return result.rowCount === 1;
+  }
+
+  async revokeStaffTrustedDevice(
+    trustHash: string,
+    now: Date,
+    subject?: string,
+  ): Promise<RevokedStaffTrustedDevice | null> {
+    const result = await this.executor.query<{
+      cognito_username: string;
+      device_key: string;
+    }>(
+      `UPDATE staff_trusted_devices SET revoked_at = $2::timestamptz
+       WHERE trust_hash = $1 AND revoked_at IS NULL
+         AND ($3::text IS NULL OR cognito_subject = $3)
+       RETURNING cognito_username, device_key`,
+      [trustHash, now, subject ?? null],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          cognitoUsername: row.cognito_username,
+          deviceKey: row.device_key,
+        }
+      : null;
+  }
+
+  async revokeStaffTrustedDevicesForSubject(
+    subject: string,
+    now: Date,
+  ): Promise<RevokedStaffTrustedDevice[]> {
+    const result = await this.executor.query<{
+      cognito_username: string;
+      device_key: string;
+    }>(
+      `UPDATE staff_trusted_devices SET revoked_at = $2::timestamptz
+       WHERE cognito_subject = $1 AND revoked_at IS NULL
+       RETURNING cognito_username, device_key`,
+      [subject, now],
+    );
+    return result.rows.map((row) => ({
+      cognitoUsername: row.cognito_username,
+      deviceKey: row.device_key,
+    }));
+  }
+
+  async revokeStaffTrustedDevicesForLogin(
+    loginIdentifier: string,
+    now: Date,
+  ): Promise<RevokedStaffTrustedDevice[]> {
+    const result = await this.executor.query<{
+      cognito_username: string;
+      device_key: string;
+    }>(
+      `UPDATE staff_trusted_devices SET revoked_at = $2::timestamptz
+       WHERE (login_identifier = $1 OR cognito_username = $1)
+         AND revoked_at IS NULL
+       RETURNING cognito_username, device_key`,
+      [loginIdentifier, now],
+    );
+    return result.rows.map((row) => ({
+      cognitoUsername: row.cognito_username,
+      deviceKey: row.device_key,
+    }));
   }
 }

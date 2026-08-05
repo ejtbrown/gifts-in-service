@@ -22,6 +22,8 @@ Use Node.js 24 and the pnpm version pinned in `package.json`.
 - `pnpm db:migrate` / `pnpm db:seed`
 - `pnpm eval:ai`
 - `pnpm infra:fmt` / `pnpm infra:validate`
+- `pnpm audit:dependencies` / `pnpm audit:signatures` / `pnpm audit:repo`
+- `pnpm audit:sbom` after application and Lambda builds
 
 ## Conventions
 
@@ -42,9 +44,16 @@ Use Node.js 24 and the pnpm version pinned in `package.json`.
 - Enforce authorization, Origin, CSRF, eligibility, and ownership in backend code even when the UI hides an action.
 - A privacy-critical production preflight failure must stop deployment.
 
+## Supply-chain and deployment-control checks
+
+- For every dependency or lockfile update, use the pinned Node.js and pnpm versions, run the frozen install, production dependency audit, registry-signature audit, and repository safety scan. Triage every reported CVE against the CISA Known Exploited Vulnerabilities catalog; do not suppress an advisory without a documented rationale and expiry.
+- Generate and validate the CycloneDX SBOM after builds. Deployment bundles must include the SBOM and a verified SHA-256 inventory covering the frontend and every Lambda archive.
+- For changes to `.github/workflows`, `infra/bootstrap`, OIDC trust, deployment roles, or environment names, inspect the live GitHub environment branch policies and reviewers plus `dev`/`main` branch protection before handoff. Confirm that `dev-plan` and `prod` retain required reviewers, that plan credentials are limited to pull-request merge refs, and that deploy credentials are limited to their matching protected branches. Never print environment-variable values or credentials while checking settings.
+- Re-run the bootstrap IAM regression tests whenever deployment-role actions or application runtime-role permissions change. Application Lambda and scheduler roles must retain the `gis-application-boundary`; deployment automation must not be able to remove it.
+
 ## Testing and definition of done
 
 - Add unit tests for domain/security logic and regression tests for each fixed defect.
 - Database behavior must be covered against PostgreSQL with pgvector; external AI/email/auth calls use fakes in CI.
-- Run formatting, lint, type checking, unit, integration, E2E, accessibility, build, and Terraform checks before handoff.
+- Run formatting, lint, type checking, unit, integration, E2E, accessibility, build, Terraform, dependency/signature, repository safety, SBOM, and deployment-inventory checks before handoff.
 - A change is done only when behavior, tests, documentation, configuration validation, and privacy/security effects agree.

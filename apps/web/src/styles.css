@@ -518,6 +518,9 @@ textarea {
 .review-actions {
   margin-top: 2rem;
 }
+.profile-control-delete {
+  margin-left: auto;
+}
 .form-error {
   color: #842828;
   font-weight: 750;
@@ -614,6 +617,56 @@ textarea {
 .profile-dialog h2 {
   margin-top: 0;
 }
+.term-link {
+  display: inline;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--teal-deep);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+}
+.term-link::after {
+  content: " ⓘ";
+  font-size: 0.8em;
+  text-decoration: none;
+}
+.term-link:hover {
+  color: var(--navy);
+  text-decoration-style: solid;
+}
+.term-link:focus-visible {
+  border-radius: 0.2rem;
+  outline: 3px solid var(--gold);
+  outline-offset: 0.15rem;
+}
+.term-dialog {
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 0;
+  background: var(--cream-light);
+  color: var(--ink);
+  box-shadow: 0 18px 60px rgb(35 64 90 / 24%);
+}
+.term-dialog::backdrop {
+  background: rgb(23 47 70 / 48%);
+}
+.term-dialog-content {
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+.term-dialog h2 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.35rem, 4vw, 1.75rem);
+}
+.term-dialog p {
+  margin: 0 0 1.25rem;
+}
 .page-heading {
   display: flex;
   justify-content: space-between;
@@ -700,6 +753,21 @@ textarea {
 .email-list span {
   color: var(--muted);
 }
+.staff-email-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: initial;
+}
+.staff-email-copy {
+  justify-self: start;
+}
+.staff-email-details {
+  min-width: 0;
+}
+.staff-email-details a {
+  overflow-wrap: anywhere;
+}
 .text-button,
 .text-link {
   background: none;
@@ -745,6 +813,12 @@ textarea {
 }
 .staff-console-nav a.active {
   text-decoration-thickness: 0.18em;
+}
+.staff-session-actions {
+  justify-content: flex-end;
+}
+.trusted-browser-choice {
+  margin-block: 1.25rem;
 }
 .totp-qr {
   display: block;
@@ -941,6 +1015,9 @@ td {
   .button-row .button,
   .review-actions .button {
     width: 100%;
+  }
+  .profile-control-delete {
+    margin-left: 0;
   }
   .site-footer .shell {
     display: block;

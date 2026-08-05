@@ -67,6 +67,7 @@ describe("PostgreSQL invariants", () => {
     const pending = await repository.startPendingInterview({
       personId,
       openingMessage: "What fictional experience would you like to share?",
+      initialCompletenessConfidence: "LOW",
       now: startedAt,
     });
     expect(pending.revision).toBe(0);
@@ -89,6 +90,14 @@ describe("PostgreSQL invariants", () => {
         personId,
         expectedRevision: 0,
         messages,
+        completenessConfidence: "LOW",
+        followUpNotes: ["computer experience still needs follow-up"],
+        conversationMemory: {
+          establishedFacts: [
+            "Can help organize occasional fictional community events.",
+          ],
+          closedTopics: [],
+        },
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -98,6 +107,14 @@ describe("PostgreSQL invariants", () => {
         personId,
         expectedRevision: 0,
         messages,
+        completenessConfidence: "MODERATE",
+        followUpNotes: [],
+        conversationMemory: {
+          establishedFacts: [
+            "Can help organize occasional fictional community events.",
+          ],
+          closedTopics: [],
+        },
         now: new Date("2026-07-16T13:01:00.000Z"),
       }),
     ).toBeNull();
@@ -107,6 +124,16 @@ describe("PostgreSQL invariants", () => {
     );
     expect(resumed?.messages).toEqual(messages);
     expect(resumed?.proposedProfile).toBe(exact);
+    expect(resumed?.completenessConfidence).toBe("LOW");
+    expect(resumed?.followUpNotes).toEqual([
+      "computer experience still needs follow-up",
+    ]);
+    expect(resumed?.conversationMemory).toEqual({
+      establishedFacts: [
+        "Can help organize occasional fictional community events.",
+      ],
+      closedTopics: [],
+    });
 
     expect(
       await repository.saveApprovedProfile({

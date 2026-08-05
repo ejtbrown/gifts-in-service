@@ -1,6 +1,12 @@
 import {
+  interviewConversationMemorySchema,
+  interviewCompletenessSchema,
+  interviewFollowUpNotesSchema,
   interviewMessageSchema,
   profileTextSchema,
+  type InterviewCompleteness,
+  type InterviewConversationMemory,
+  type InterviewFollowUpNotes,
   type InterviewMessage,
   type ProfileStatus,
   type StaffGroup,
@@ -40,6 +46,9 @@ export interface StaffPersonRecord {
 export interface PendingInterview {
   messages: InterviewMessage[];
   proposedProfile: string | null;
+  completenessConfidence: InterviewCompleteness;
+  followUpNotes: InterviewFollowUpNotes;
+  conversationMemory: InterviewConversationMemory;
   revision: number;
   startedAt: Date;
   updatedAt: Date;
@@ -52,6 +61,14 @@ function vectorLiteral(embedding: readonly number[]): string {
 
 function pendingMessages(value: string): InterviewMessage[] {
   return interviewMessageSchema.shape.messages.parse(JSON.parse(value));
+}
+
+function pendingFollowUpNotes(value: string): InterviewFollowUpNotes {
+  return interviewFollowUpNotesSchema.parse(JSON.parse(value));
+}
+
+function pendingConversationMemory(value: string): InterviewConversationMemory {
+  return interviewConversationMemorySchema.parse(JSON.parse(value));
 }
 
 export class Repository {
@@ -192,6 +209,7 @@ export class Repository {
   async startPendingInterview(input: {
     personId: string;
     openingMessage: string;
+    initialCompletenessConfidence: InterviewCompleteness;
     now: Date;
   }): Promise<PendingInterview> {
     return this.executor.transaction(async (transaction) => {
@@ -200,27 +218,36 @@ export class Repository {
         [input.personId, input.now],
       );
       await transaction.query(
-        `INSERT INTO pending_interviews(person_id, messages, revision, started_at, updated_at, expires_at)
-         VALUES ($1::uuid, $2::jsonb, 0, $3::timestamptz, $3::timestamptz,
-           $3::timestamptz + interval '30 days')
+        `INSERT INTO pending_interviews(person_id, messages, completeness_confidence, follow_up_notes, revision, started_at, updated_at, expires_at)
+         VALUES ($1::uuid, $2::jsonb, $3, '[]'::jsonb, 0, $4::timestamptz, $4::timestamptz,
+           $4::timestamptz + interval '30 days')
          ON CONFLICT (person_id) DO NOTHING`,
         [
           input.personId,
           JSON.stringify([
             { role: "assistant", content: input.openingMessage },
           ]),
+          interviewCompletenessSchema.parse(
+            input.initialCompletenessConfidence,
+          ),
           input.now,
         ],
       );
       const result = await transaction.query<{
         messages_json: string;
         proposed_profile: string | null;
+        completeness_confidence: string;
+        follow_up_notes_json: string;
+        conversation_memory_json: string;
         revision: number;
         started_at: Date;
         updated_at: Date;
         expires_at: Date;
       }>(
-        `SELECT messages::text AS messages_json, proposed_profile, revision, started_at, updated_at, expires_at
+        `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
+                follow_up_notes::text AS follow_up_notes_json,
+                conversation_memory::text AS conversation_memory_json,
+                revision, started_at, updated_at, expires_at
          FROM pending_interviews
          WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
         [input.personId, input.now],
@@ -230,6 +257,13 @@ export class Repository {
       return {
         messages: pendingMessages(row.messages_json),
         proposedProfile: row.proposed_profile,
+        completenessConfidence: interviewCompletenessSchema.parse(
+          row.completeness_confidence,
+        ),
+        followUpNotes: pendingFollowUpNotes(row.follow_up_notes_json),
+        conversationMemory: pendingConversationMemory(
+          row.conversation_memory_json,
+        ),
         revision: row.revision,
         startedAt: row.started_at,
         updatedAt: row.updated_at,
@@ -245,12 +279,18 @@ export class Repository {
     const result = await this.executor.query<{
       messages_json: string;
       proposed_profile: string | null;
+      completeness_confidence: string;
+      follow_up_notes_json: string;
+      conversation_memory_json: string;
       revision: number;
       started_at: Date;
       updated_at: Date;
       expires_at: Date;
     }>(
-      `SELECT messages::text AS messages_json, proposed_profile, revision, started_at, updated_at, expires_at
+      `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
+              follow_up_notes::text AS follow_up_notes_json,
+              conversation_memory::text AS conversation_memory_json,
+              revision, started_at, updated_at, expires_at
        FROM pending_interviews
        WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
       [personId, now],
@@ -260,6 +300,13 @@ export class Repository {
       ? {
           messages: pendingMessages(row.messages_json),
           proposedProfile: row.proposed_profile,
+          completenessConfidence: interviewCompletenessSchema.parse(
+            row.completeness_confidence,
+          ),
+          followUpNotes: pendingFollowUpNotes(row.follow_up_notes_json),
+          conversationMemory: pendingConversationMemory(
+            row.conversation_memory_json,
+          ),
           revision: row.revision,
           startedAt: row.started_at,
           updatedAt: row.updated_at,
@@ -272,18 +319,33 @@ export class Repository {
     personId: string;
     expectedRevision: number;
     messages: readonly InterviewMessage[];
-    proposedProfile?: string;
+    completenessConfidence: InterviewCompleteness;
+    followUpNotes: readonly string[];
+    conversationMemory: InterviewConversationMemory;
+    proposedProfile?: string | null;
     now: Date;
   }): Promise<number | null> {
     const parsed = interviewMessageSchema.shape.messages.parse(input.messages);
     const proposedProfile =
-      input.proposedProfile === undefined
-        ? null
-        : profileTextSchema.parse(input.proposedProfile);
+      typeof input.proposedProfile === "string"
+        ? profileTextSchema.parse(input.proposedProfile)
+        : null;
+    const completenessConfidence = interviewCompletenessSchema.parse(
+      input.completenessConfidence,
+    );
+    const followUpNotes = interviewFollowUpNotesSchema.parse(
+      input.followUpNotes,
+    );
+    const conversationMemory = interviewConversationMemorySchema.parse(
+      input.conversationMemory,
+    );
     const result = await this.executor.query<{ revision: number }>(
       `UPDATE pending_interviews
        SET messages = $3::jsonb,
-           proposed_profile = COALESCE($5, proposed_profile),
+           proposed_profile = CASE WHEN $5::boolean THEN $6::text ELSE proposed_profile END,
+           completeness_confidence = $7,
+           follow_up_notes = $8::jsonb,
+           conversation_memory = $9::jsonb,
            revision = revision + 1,
            updated_at = $4::timestamptz
        WHERE person_id = $1::uuid AND revision = $2 AND expires_at > $4::timestamptz
@@ -293,7 +355,11 @@ export class Repository {
         input.expectedRevision,
         JSON.stringify(parsed),
         input.now,
+        input.proposedProfile !== undefined,
         proposedProfile,
+        completenessConfidence,
+        JSON.stringify(followUpNotes),
+        JSON.stringify(conversationMemory),
       ],
     );
     return result.rows[0]?.revision ?? null;

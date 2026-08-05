@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-17
-- Last amended: 2026-07-19
+- Last amended: 2026-08-05
 
 ## Context
 
@@ -27,3 +27,5 @@ The Cognito hosted domain, OAuth callback configuration, and obsolete OAuth stat
 Staff remain visually and navigationally inside Gifts in Service throughout native Cognito authentication. Passwords and TOTP codes pass through the staff Lambda transiently, increasing the importance of the existing no-body-logging rule and least-privilege access to runtime inspection.
 
 This flow intentionally supports native user-pool accounts only. OIDC and SAML federation require user-agent redirects and therefore cannot meet the same-page constraint. Adding workforce federation requires a new design decision and user-experience review rather than silently reintroducing a hosted redirect.
+
+The optional remembered-device extension is defined separately in [ADR 0008](0008-thirty-day-trusted-staff-browser.md). It does not change the 24-hour staff-session lifetime or allow Cognito tokens to become browser sessions.

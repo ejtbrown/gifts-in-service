@@ -29,7 +29,11 @@ export default tseslint.config(
     },
     plugins: { "react-hooks": reactHooks },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // v7's recommended preset adds compiler-oriented rules. Keep this
+      // dependency-only upgrade behaviorally compatible and enable those
+      // rules separately when their application changes can be reviewed.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-explicit-any": "error",
     },

@@ -81,6 +81,35 @@ locals {
   environments                = toset(["dev", "prod"])
   github_repository_segments  = split("/", var.github_repository)
   github_oidc_repository_name = var.github_repository_ids == null ? var.github_repository : "${local.github_repository_segments[0]}@${var.github_repository_ids.owner_id}/${local.github_repository_segments[1]}@${var.github_repository_ids.repository_id}"
+  application_boundary_arn    = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/gis-application-boundary"
+}
+
+data "aws_iam_policy_document" "application_boundary" {
+  statement {
+    sid = "ApplicationRuntimeCeiling"
+    actions = [
+      "bedrock:ApplyGuardrail", "bedrock:InvokeModel",
+      "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDeleteUser", "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser", "cognito-idp:AdminForgetDevice",
+      "cognito-idp:AdminInitiateAuth",
+      "cognito-idp:AdminListGroupsForUser", "cognito-idp:AdminRemoveUserFromGroup",
+      "cognito-idp:AdminRespondToAuthChallenge", "cognito-idp:AdminUserGlobalSignOut",
+      "cognito-idp:ListGroups", "cognito-idp:ListUsers",
+      "kms:Decrypt", "lambda:InvokeFunction", "logs:CreateLogGroup",
+      "logs:CreateLogStream", "logs:PutLogEvents", "rds-data:BeginTransaction",
+      "rds-data:CommitTransaction", "rds-data:ExecuteStatement", "rds-data:RollbackTransaction",
+      "secretsmanager:GetSecretValue", "ses:SendEmail", "sqs:ChangeMessageVisibility",
+      "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ReceiveMessage"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "application_boundary" {
+  name        = "gis-application-boundary"
+  description = "Maximum permissions for Gifts in Service Lambda and scheduler roles"
+  policy      = data.aws_iam_policy_document.application_boundary.json
 }
 
 data "aws_iam_policy_document" "github_trust" {
@@ -148,9 +177,7 @@ data "aws_iam_policy_document" "deploy" {
     sid = "CurrentTerraformSurface"
     actions = [
       "acm:*", "apigateway:*", "bedrock:*", "budgets:*", "cloudfront:*", "cloudwatch:*",
-      "cognito-idp:*", "ec2:*", "events:*", "iam:Get*", "iam:List*", "iam:CreateRole",
-      "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
-      "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PassRole", "kms:*", "lambda:*", "logs:*",
+      "cognito-idp:*", "ec2:*", "events:*", "kms:*", "lambda:*", "logs:*",
       "rds:*", "route53:*", "scheduler:*", "secretsmanager:*", "ses:*", "sns:*", "sqs:*", "wafv2:*",
       "s3:AbortMultipartUpload", "s3:CreateBucket", "s3:DeleteBucket", "s3:DeleteBucketPolicy",
       "s3:DeleteObject", "s3:GetAccelerateConfiguration", "s3:GetBucketAcl", "s3:GetBucketCORS",
@@ -164,6 +191,47 @@ data "aws_iam_policy_document" "deploy" {
       "s3:PutObject", "s3:TagResource", "s3:UntagResource"
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid       = "InspectIam"
+    actions   = ["iam:Get*", "iam:List*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "CreateBoundedApplicationRoles"
+    actions = [
+      "iam:CreateRole",
+      "iam:PutRolePermissionsBoundary",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/gis-*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [local.application_boundary_arn]
+    }
+  }
+
+  statement {
+    sid = "ManageBoundedApplicationRoles"
+    actions = [
+      "iam:AttachRolePolicy", "iam:DeleteRole", "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy", "iam:PutRolePolicy", "iam:TagRole", "iam:UntagRole",
+      "iam:UpdateAssumeRolePolicy", "iam:UpdateRole", "iam:UpdateRoleDescription"
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/gis-*"]
+  }
+
+  statement {
+    sid       = "PassApplicationRolesToExpectedServices"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/gis-*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["lambda.amazonaws.com", "scheduler.amazonaws.com"]
+    }
   }
 }
 

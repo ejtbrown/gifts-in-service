@@ -1,6 +1,6 @@
 import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import { DataApiExecutor } from "@gis/db";
-import { emitMetric, loadConfig } from "@gis/shared";
+import { emitMetric, loadEmailEventsConfig } from "@gis/shared";
 import { processSesEvent } from "./worker.js";
 
 function messageBody(body: string): unknown {
@@ -11,9 +11,7 @@ function messageBody(body: string): unknown {
 }
 
 export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
-  const config = loadConfig();
-  if (!config.RDS_RESOURCE_ARN || !config.RDS_SECRET_ARN)
-    throw new Error("EmailEventsDataApiConfigurationMissing");
+  const config = loadEmailEventsConfig();
   const executor = new DataApiExecutor({
     resourceArn: config.RDS_RESOURCE_ARN,
     secretArn: config.RDS_SECRET_ARN,

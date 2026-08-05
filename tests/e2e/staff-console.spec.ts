@@ -70,7 +70,7 @@ test("administrator sees volunteer, lifecycle, audit, and access controls but no
     navigation.getByRole("link", { name: "Volunteer records" }),
   ).toBeVisible();
   await expect(
-    navigation.getByRole("link", { name: "Lifecycle exceptions" }),
+    navigation.getByRole("link", { name: "Profile maintenance" }),
   ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Audit" })).toBeVisible();
   await expect(
@@ -130,7 +130,7 @@ test("search-only staff see the query control and no administrative navigation",
   const result = page.getByRole("article");
   await expect(result.getByText("MEDIUM", { exact: true })).toBeVisible();
   await expect(
-    result.getByText("Deterministic explanation", { exact: true }),
+    result.getByText("Fixed-rule explanation", { exact: true }),
   ).toBeVisible();
   await expect(result.getByText(evidence, { exact: true })).toBeVisible();
   await expect(result.getByText(approvedText, { exact: true })).toBeHidden();
@@ -138,6 +138,69 @@ test("search-only staff see the query control and no administrative navigation",
     .locator("summary", { hasText: "Show full approved profile" })
     .click();
   await expect(result.getByText(approvedText, { exact: true })).toBeVisible();
+});
+
+test("staff can email or copy a volunteer contact address", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mockStaff(
+    page,
+    ["gis-staff"],
+    ["profile:search", "profile:read", "contact:read"],
+  );
+  await page.route(
+    "**/api/staff/profiles/10000000-0000-4000-8000-000000000013",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          person: {
+            displayName: "Casey Contact",
+            status: "ACTIVE",
+            approvedText:
+              "Casey Contact offers occasional fictional event-planning assistance.",
+            contentUpdatedAt: "2026-08-04T12:00:00.000Z",
+            lastVerifiedAt: "2026-08-04T12:00:00.000Z",
+            scheduledPurgeAt: null,
+          },
+          emails: [
+            {
+              displayEmail: "casey.contact@example.invalid",
+              deliverability: "DELIVERABLE",
+            },
+          ],
+          selfReportedNotice:
+            "This profile is self-reported. Confirm requirements separately.",
+        },
+      });
+    },
+  );
+
+  await page.goto("/staff/profiles/10000000-0000-4000-8000-000000000013");
+  const emailLink = page.getByRole("link", {
+    name: "casey.contact@example.invalid",
+  });
+  await expect(emailLink).toHaveAttribute(
+    "href",
+    "mailto:casey.contact@example.invalid",
+  );
+  const copyButton = page.getByRole("button", {
+    name: "Copy casey.contact@example.invalid to clipboard",
+  });
+  const [copyButtonBox, emailLinkBox] = await Promise.all([
+    copyButton.boundingBox(),
+    emailLink.boundingBox(),
+  ]);
+  expect(copyButtonBox).not.toBeNull();
+  expect(emailLinkBox).not.toBeNull();
+  expect(copyButtonBox!.x).toBeLessThan(emailLinkBox!.x);
+  await copyButton.click();
+  await expect(copyButton).toHaveText("Copied");
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("casey.contact@example.invalid");
 });
 
 test("unauthorized roles never see the volunteer query prompt", async ({
@@ -158,12 +221,29 @@ test("privacy auditors and technical administrators see only their own consoles"
 }) => {
   await mockStaff(page, ["gis-privacy-auditor"], ["audit:read"]);
   await page.route("**/api/staff/audit", async (route) => {
-    await route.fulfill({ status: 200, json: { events: [] } });
+    await route.fulfill({
+      status: 200,
+      json: {
+        events: [
+          {
+            id: "90000000-0000-4000-8000-000000000001",
+            occurred_at: "2026-08-03T15:00:00.000Z",
+            action: "PROFILE_OPEN",
+            actor_username: "auditor@example.invalid",
+            succeeded: true,
+          },
+        ],
+      },
+    });
   });
   await page.goto("/staff/audit");
   let navigation = page.getByRole("navigation", { name: "Staff console" });
   await expect(navigation.getByRole("link")).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "Audit" })).toBeVisible();
+  await expect(
+    page.locator("thead").getByText("Actor username", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("auditor@example.invalid")).toBeVisible();
 
   await page.unroute("**/api/staff/me");
   await mockStaff(page, ["gis-technical-admin"], ["technical:read"]);

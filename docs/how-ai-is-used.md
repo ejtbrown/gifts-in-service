@@ -1,20 +1,29 @@
 # How AI is used
 
-The AI assistant asks focused questions, helps produce a concise profile draft, turns a staff search into retrieval terms, and reranks only profiles already found by database search. It does not assign work, verify credentials, decide suitability, or silently add qualifications.
+## Plain-language explanation
 
-During an interview, questions and answers are stored in the encrypted application database for up to 30 days so the member can resume after a refresh or newly redeemed magic link. The transcript is scoped to the owning person, is never logged or exposed to staff search, and is deleted when the member approves the profile or the fixed 30-day period expires. The backend supplies it to stateless Amazon Bedrock requests. The exact draft must be reviewed and approved. Only that approved prose becomes searchable, and its embedding is generated from that prose alone—not the name, email, conversation, audit data, or staff notes.
+Artificial intelligence (AI) is software that uses patterns from examples to create text or make suggestions. It is a tool, not a person, and it does not understand or judge someone the way a person does.
 
-Search combines full-text, semantic, and typo-tolerant database retrieval. The model can reorder only those candidates. Every displayed match reason must cite focused text present in the approved profile; otherwise deterministic validation rejects the model response and the service falls back safely. The fallback extracts the most relevant exact sentences, assigns every candidate a `HIGH`, `MEDIUM`, or `LOW` grade, and lowers the grade when the relevant evidence describes a limitation or developing skill. The complete approved profile remains available in a collapsed section but is not a substitute for the explanation and evidence.
+In Gifts in Service, AI asks questions based on what a person has already said and prepares a profile draft in that person's own words. The person may answer one piece at a time. The assistant keeps a simple progress estimate to decide whether another question would help or whether it can offer to finish. That estimate is not a rating, is never shown to staff, and is never used in staff search.
 
-Prompts coach people not to share unnecessary sensitive information. Deterministic checks reject recognizable credentials and high-risk identification or financial numbers before the response is added to the pending interview. A Bedrock Guardrail adds defense in depth for model requests. Either kind of rejection returns an explicit message explaining that the response was not accepted because it appears to contain sensitive personal information and asks the person to remove it and try again. The message never repeats the detected value. No filter is perfect. A privacy-sensitive revision always requires fresh review; the application never silently edits approved text.
+The person sees the entire proposed profile before it is saved. Nothing becomes the person's profile until they approve the proposal shown to them. The exact words they approve are the official saved profile. The service does not keep a hidden list of skills it guessed about the person.
 
-AI and policy configuration require operator review. Production deployment fails unless Bedrock retention and invocation logging, infrastructure body logging, SES readiness, and policy review are confirmed. Model IDs, prompt versions, embeddings, and evaluation fixtures are versioned so changes can be tested and re-embedded deliberately.
+Unfinished questions and answers, any proposal shown inside the resumable conversation, the simple progress estimate, and short notes that help the assistant remember what the person said or chose to skip are saved in protected form for no more than 30 days. This lets the person return without starting over. A separate draft opened on the final-review page after selecting **Create a draft** stays only in the current browser tab and is lost if it is reloaded or closed. Anyone who can use a verified email address associated with the profile can reach the saved unfinished conversation. If the address is a shared mailbox, anyone with access to that mailbox may be able to open it. Staff cannot search it or use it to rate the person. It is deleted when the profile is approved or when the 30 days end.
 
-The interviewer returns a bounded action decision as well as conversational
-text. It may continue the interview, request that the dedicated profile
-drafter prepare an exact proposal, or recognize a clear request to submit the
-most recently displayed proposal. Questions, uncertainty, and change requests
-are not submission intent. A profile is saved only from the exact
-server-authoritative proposal displayed to the member (or an exact proposal
-copied from the most recent legacy assistant message), never from a newly
-generated variant at submission time.
+When staff search, the service looks for exact words, related meanings, and close spellings only in approved profiles. AI may reorder those possible matches and explain why a profile may fit the request. Names and contact details are not sent to the AI search tool. Every result includes evidence copied exactly from the approved profile. AI may write a separate explanation of the possible match. If AI gives unusable evidence or an unusable answer, the service uses fixed non-AI rules instead.
+
+AI can be wrong. It cannot verify licenses, qualifications, safety, willingness, background screening, or availability, and it does not assign volunteers. Software checks and safety filters reduce the chance of accepting sensitive information or showing an unsupported answer, but no filter is perfect.
+
+## Technical implementation notes for maintainers
+
+These details support engineering, security, and privacy review. They are intentionally not included in the member-facing explanation because they do not help a member decide whether to participate.
+
+- The interviewer reassesses a broad `LOW`, `MODERATE`, or `HIGH` completeness value. It controls follow-up behavior and proposal timing only; it is not a suitability score or search field.
+- Pending questions, answers, the latest unapproved proposal, optional follow-up notes, bounded conversation memory, and the completeness value are stored in the encrypted, person-scoped `pending_interviews` row for a fixed maximum of 30 days. They are never logged, embedded, exposed to staff search, or retained after profile approval or expiry.
+- The backend supplies pending state to stateless Amazon Bedrock requests. The application does not use Bedrock Agents, Knowledge Bases, or provider-managed stateful sessions.
+- Only exact approved profile prose is embedded. Names, email addresses, pending conversations, conversation memory, completeness values, follow-up notes, audit data, and staff notes are excluded.
+- Search combines full-text, vector, and trigram retrieval. A schema-validated model may rerank only those candidates and must cite exact approved-profile text. Invalid output falls back to deterministic reciprocal-rank fusion and exact-sentence evidence.
+- Deterministic input checks and a Bedrock Guardrail reject recognizable credentials and high-risk identification or financial numbers without repeating the detected value. Privacy-sensitive revisions always require fresh member review.
+- Production deployment fails closed unless retention, model-invocation logging, infrastructure body logging, email readiness, and policy review are confirmed. Model IDs, prompt versions, embeddings, and evaluation fixtures are versioned.
+- Clear member directions such as “move on,” “already answered,” or requests to wrap up control the interview. New facts invalidate an earlier proposal. Submission saves only the exact server-authoritative proposal most recently displayed to the member.
+- A malformed structured interviewer decision is discarded and retried internally up to two times. The pending interview is updated only after a valid decision; if all three attempts fail, the member sees a retryable error and their response remains in the entry box.

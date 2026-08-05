@@ -1,5 +1,6 @@
-import { Component, Suspense, type ReactNode } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Component, Suspense, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Link, NavLink, Outlet } from "react-router";
 import { useConfig } from "./context.js";
 
 export function RootLayout() {
@@ -80,6 +81,67 @@ export function Notice({
     >
       {children}
     </div>
+  );
+}
+
+export function PlainLanguageTerm({
+  children,
+  explanation,
+  title,
+}: {
+  children: ReactNode;
+  explanation: string;
+  title: string;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+
+  const popup =
+    typeof document === "undefined"
+      ? null
+      : createPortal(
+          <dialog
+            aria-labelledby={titleId}
+            className="term-dialog"
+            ref={dialog}
+            onClick={(event) => {
+              if (event.target === event.currentTarget)
+                event.currentTarget.close();
+            }}
+            onClose={() => trigger.current?.focus()}
+          >
+            <div className="term-dialog-content">
+              <h2 id={titleId}>{title}</h2>
+              <p>{explanation}</p>
+              <button
+                autoFocus
+                className="button secondary"
+                type="button"
+                onClick={() => dialog.current?.close()}
+              >
+                Close explanation
+              </button>
+            </div>
+          </dialog>,
+          document.body,
+        );
+
+  return (
+    <>
+      <button
+        aria-haspopup="dialog"
+        className="term-link"
+        ref={trigger}
+        type="button"
+        onClick={() => {
+          if (!dialog.current?.open) dialog.current?.showModal();
+        }}
+      >
+        {children}
+      </button>
+      {popup}
+    </>
   );
 }
 

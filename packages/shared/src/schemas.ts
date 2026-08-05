@@ -22,13 +22,13 @@ export const interviewMessageSchema = z.object({
       }),
     )
     .min(1)
-    .max(25)
+    .max(61)
     .refine(
       (messages) =>
         messages.reduce(
           (total, message) => total + message.content.length,
           0,
-        ) <= 24_000,
+        ) <= 60_000,
       {
         message:
           "Active interview is too long; please create a draft or start a new session",
@@ -40,6 +40,19 @@ export const interviewResponseSchema = z.object({
   response: z.string().trim().min(1).max(3000),
   revision: z.number().int().min(0),
 });
+
+export const interviewCompletenessSchema = z.enum(["LOW", "MODERATE", "HIGH"]);
+
+export const interviewFollowUpNotesSchema = z
+  .array(z.string().trim().min(1).max(160))
+  .max(8);
+
+export const interviewConversationMemorySchema = z
+  .object({
+    establishedFacts: z.array(z.string().trim().min(1).max(240)).max(16),
+    closedTopics: z.array(z.string().trim().min(1).max(160)).max(8),
+  })
+  .strict();
 
 export const profileDraftRequestSchema = z.object({
   revision: z.number().int().min(0),
@@ -107,6 +120,13 @@ export const groupSchema = z.enum([
 export type InterviewMessage = z.infer<
   typeof interviewMessageSchema
 >["messages"][number];
+export type InterviewCompleteness = z.infer<typeof interviewCompletenessSchema>;
+export type InterviewFollowUpNotes = z.infer<
+  typeof interviewFollowUpNotesSchema
+>;
+export type InterviewConversationMemory = z.infer<
+  typeof interviewConversationMemorySchema
+>;
 export type SearchPlan = z.infer<typeof searchPlanSchema>;
 export type RerankerOutput = z.infer<typeof rerankerOutputSchema>;
 export type ProfileStatus = z.infer<typeof profileStatusSchema>;

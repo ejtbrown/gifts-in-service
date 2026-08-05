@@ -9,8 +9,10 @@ import {
 
 export const MEMBER_COOKIE = "__Host-gis_member_session";
 export const STAFF_COOKIE = "__Host-gis_staff_session";
+export const STAFF_TRUST_COOKIE = "__Host-gis_staff_trusted_browser";
 export const MEMBER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const STAFF_SESSION_TTL_SECONDS = 24 * 60 * 60;
+export const STAFF_TRUST_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export interface OpaqueSecret {
   raw: string;
@@ -51,7 +53,8 @@ export function decryptShortLivedSecret(
   keyMaterial: string,
 ): string {
   const payload = Buffer.from(value, "base64url");
-  if (payload.length < 29) throw new Error("EncryptedSecretInvalid");
+  if (payload.length < 29 || payload.toString("base64url") !== value)
+    throw new Error("EncryptedSecretInvalid");
   const key = createHash("sha256").update(keyMaterial, "utf8").digest();
   const decipher = createDecipheriv(
     "aes-256-gcm",
@@ -156,6 +159,18 @@ export function staffCookieOptions(maxAgeSeconds = STAFF_SESSION_TTL_SECONDS) {
     secure: true,
     httpOnly: true,
     sameSite: "lax" as const,
+    path: "/",
+    maxAge: maxAgeSeconds,
+  };
+}
+
+export function staffTrustCookieOptions(
+  maxAgeSeconds = STAFF_TRUST_TTL_SECONDS,
+) {
+  return {
+    secure: true,
+    httpOnly: true,
+    sameSite: "strict" as const,
     path: "/",
     maxAge: maxAgeSeconds,
   };

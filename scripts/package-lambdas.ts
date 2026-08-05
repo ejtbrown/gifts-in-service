@@ -1,7 +1,15 @@
-import { chmod, cp, mkdir, readdir, rm, utimes } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  utimes,
+} from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { build } from "esbuild";
+import { build, type Plugin } from "esbuild";
 
 const root = resolve(import.meta.dirname, "..");
 const output = resolve(root, "dist/lambda");
@@ -15,6 +23,56 @@ const entries = {
 } as const;
 
 const archiveTimestamp = new Date("2000-01-01T00:00:00.000Z");
+
+function surfaceIsolationPlugin(name: string): Plugin {
+  return {
+    name: "api-surface-isolation",
+    setup(buildContext) {
+      if (name === "public-api") {
+        buildContext.onResolve(
+          { filter: /^@aws-sdk\/client-cognito-identity-provider$/ },
+          () => ({ path: "cognito-unavailable", namespace: "gis-isolation" }),
+        );
+      }
+      if (name === "staff-api") {
+        buildContext.onResolve({ filter: /^@gis\/email$/ }, () => ({
+          path: "email-unavailable",
+          namespace: "gis-isolation",
+        }));
+      }
+      buildContext.onLoad(
+        { filter: /.*/, namespace: "gis-isolation" },
+        (args) => ({
+          loader: "js",
+          contents:
+            args.path === "cognito-unavailable"
+              ? `export class CognitoIdentityProviderClient {}
+                 export class AdminAddUserToGroupCommand {}
+                 export class AdminCreateUserCommand {}
+                 export class AdminDeleteUserCommand {}
+                 export class AdminDisableUserCommand {}
+                 export class AdminEnableUserCommand {}
+                 export class AdminForgetDeviceCommand {}
+                 export class AdminListGroupsForUserCommand {}
+                 export class AdminRemoveUserFromGroupCommand {}
+                 export class AdminUserGlobalSignOutCommand {}
+                 export class ListUsersCommand {}
+                 export class AdminInitiateAuthCommand {}
+                 export class AdminRespondToAuthChallengeCommand {}
+                 export class AssociateSoftwareTokenCommand {}
+                 export class ConfirmDeviceCommand {}
+                 export class ConfirmForgotPasswordCommand {}
+                 export class ForgotPasswordCommand {}
+                 export class UpdateDeviceStatusCommand {}
+                 export class VerifySoftwareTokenCommand {}`
+              : `export class MailpitEmailAdapter {}
+                 export class SesEmailAdapter {}
+                 export function magicLinkEmail() { throw new Error("EmailUnavailableOnStaffApi"); }`,
+        }),
+      );
+    },
+  };
+}
 
 async function archiveFiles(
   rootDirectory: string,
@@ -67,17 +125,42 @@ for (const [name, entry] of Object.entries(entries)) {
     platform: "node",
     target: "node24",
     minify: true,
+    plugins: [surfaceIsolationPlugin(name)],
     sourcemap: false,
     legalComments: "none",
+    define:
+      name === "public-api" || name === "staff-api"
+        ? {
+            "process.env.GIS_API_SURFACE": JSON.stringify(
+              name === "public-api" ? "public" : "staff",
+            ),
+          }
+        : {},
     banner: {
       js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
     },
   });
-  if (
-    name === "public-api" ||
-    name === "staff-api" ||
-    name === "reembed-worker"
-  ) {
+  const bundle = await readFile(resolve(staging, "app/index.mjs"), "utf8");
+  const forbiddenMarkers =
+    name === "public-api"
+      ? [
+          "/api/staff/access/:sub/groups",
+          "/api/staff/auth/login",
+          "AdminCreateUserCommand",
+        ]
+      : name === "staff-api"
+        ? [
+            "/api/member/emails/:id/primary",
+            "/api/member/profiles/select",
+            "SendEmailCommand",
+          ]
+        : [];
+  const leakedMarker = forbiddenMarkers.find((marker) =>
+    bundle.includes(marker),
+  );
+  if (leakedMarker)
+    throw new Error(`${name} bundle contains forbidden surface marker`);
+  if (name === "public-api" || name === "staff-api") {
     await cp(
       resolve(root, "packages/ai/prompts"),
       resolve(staging, "prompts"),

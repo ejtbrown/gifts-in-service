@@ -7,6 +7,10 @@ resource "aws_cognito_user_pool" "staff" {
 
   admin_create_user_config { allow_admin_create_user_only = true }
   software_token_mfa_configuration { enabled = true }
+  device_configuration {
+    challenge_required_on_new_device      = true
+    device_only_remembered_on_user_prompt = true
+  }
   password_policy {
     minimum_length                   = 14
     require_lowercase                = true

@@ -64,10 +64,16 @@ variable "ses_production_ready" {
   default = false
 }
 variable "custom_domain_name" {
-  type    = string
-  default = ""
+  type = string
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$", var.custom_domain_name))
+    error_message = "A valid production custom domain name is required."
+  }
 }
 variable "route53_zone_id" {
-  type    = string
-  default = ""
+  type = string
+  validation {
+    condition     = can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
+    error_message = "A managed Route 53 zone ID is required for the production custom domain."
+  }
 }

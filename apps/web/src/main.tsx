@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import { ErrorBoundary, PageSuspense, RootLayout } from "./components.js";
 import { ConfigProvider } from "./context.js";
 import { AiUsePage, PrivacyPage } from "./policies.js";

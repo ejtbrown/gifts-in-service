@@ -8,3 +8,4 @@ variable "email_events_function_arn" { type = string }
 variable "email_event_queue_arn" { type = string }
 variable "reembed_function_role_name" { type = string }
 variable "email_events_function_role_name" { type = string }
+variable "permissions_boundary_arn" { type = string }

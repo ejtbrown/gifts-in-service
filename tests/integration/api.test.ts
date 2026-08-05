@@ -1,10 +1,17 @@
 import { PostgresExecutor, Repository } from "../../packages/db/src/index.js";
 import {
+  AiMalformedInterviewResponseError,
   AiSafetyInterventionError,
   FakeAiAdapter,
+  MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
   SENSITIVE_INFORMATION_REJECTION_MESSAGE,
 } from "../../packages/ai/src/index.js";
-import { keyedHash, sha256 } from "../../packages/auth/src/index.js";
+import {
+  encryptShortLivedSecret,
+  generateOpaqueSecret,
+  keyedHash,
+  sha256,
+} from "../../packages/auth/src/index.js";
 import type { SqlExecutor } from "../../packages/db/src/index.js";
 import type {
   EmailAdapter,
@@ -22,6 +29,7 @@ import type {
   StaffIdentityProvider,
   StaffTokenVerifier,
 } from "../../services/public-api/src/staff-auth.js";
+import type { CognitoDeviceCredentials } from "../../services/public-api/src/cognito-device-srp.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 class CaptureEmail implements EmailAdapter {
@@ -52,18 +60,33 @@ class GuardrailInterventionAi extends FakeAiAdapter {
   }
 }
 
+class MalformedInterviewAi extends FakeAiAdapter {
+  override interview(): Promise<never> {
+    return Promise.reject(new AiMalformedInterviewResponseError());
+  }
+}
+
 class FakeStaffIdentityProvider implements StaffIdentityProvider {
   resetConfirmed = false;
+  readonly forgottenDevices: { username: string; deviceKey: string }[] = [];
 
   startPasswordSignIn(
     username: string,
     password: string,
+    trustedDevice?: CognitoDeviceCredentials,
   ): Promise<StaffAuthStep> {
     if (password === "incorrect") {
       const error = new Error("Sensitive provider detail");
       error.name = "NotAuthorizedException";
       return Promise.reject(error);
     }
+    if (password === "returning-user-password" && trustedDevice)
+      return Promise.resolve({
+        authenticated: true,
+        idToken: "fake-verified-id-token",
+        username: "canonical-cognito-username",
+        trustedDeviceStatus: "used",
+      });
     if (password === "returning-user-password")
       return Promise.resolve({
         authenticated: false,
@@ -96,6 +119,12 @@ class FakeStaffIdentityProvider implements StaffIdentityProvider {
     return Promise.resolve({
       authenticated: true,
       idToken: "fake-verified-id-token",
+      accessToken: "fake-access-token",
+      username: input.username,
+      newDeviceMetadata: {
+        deviceKey: "us-east-1_10000000-0000-4000-8000-000000000001",
+        deviceGroupKey: "fictional-device-group",
+      },
     });
   }
 
@@ -103,8 +132,31 @@ class FakeStaffIdentityProvider implements StaffIdentityProvider {
     return Promise.resolve();
   }
 
-  confirmPasswordReset(): Promise<void> {
+  confirmPasswordReset(): Promise<{
+    subject: string;
+    cognitoUsername: string;
+  }> {
     this.resetConfirmed = true;
+    return Promise.resolve({
+      subject: "30000000-0000-4000-8000-000000000001",
+      cognitoUsername: "canonical-cognito-username",
+    });
+  }
+
+  confirmTrustedDevice(input: {
+    accessToken: string;
+    deviceKey: string;
+    deviceGroupKey: string;
+  }): Promise<CognitoDeviceCredentials> {
+    return Promise.resolve({
+      deviceKey: input.deviceKey,
+      deviceGroupKey: input.deviceGroupKey,
+      deviceSecret: "fictional-device-secret-that-is-long-enough",
+    });
+  }
+
+  forgetTrustedDevice(username: string, deviceKey: string): Promise<void> {
+    this.forgottenDevices.push({ username, deviceKey });
     return Promise.resolve();
   }
 }
@@ -135,6 +187,8 @@ interface FakeCognitoUser {
 }
 
 class FakeCognitoAccessClient {
+  readonly globalSignOuts: string[] = [];
+  failNextGroupMutation = false;
   readonly users: FakeCognitoUser[] = [
     {
       subject: "30000000-0000-4000-8000-000000000001",
@@ -216,12 +270,20 @@ class FakeCognitoAccessClient {
       });
     }
     if (value.constructor.name === "AdminAddUserToGroupCommand") {
+      if (this.failNextGroupMutation) {
+        this.failNextGroupMutation = false;
+        return Promise.reject(new Error("Fictional Cognito mutation failure"));
+      }
       const user = byUsername();
       if (user && value.input.GroupName)
         user.groups = [...new Set([...user.groups, value.input.GroupName])];
       return Promise.resolve({});
     }
     if (value.constructor.name === "AdminRemoveUserFromGroupCommand") {
+      if (this.failNextGroupMutation) {
+        this.failNextGroupMutation = false;
+        return Promise.reject(new Error("Fictional Cognito mutation failure"));
+      }
       const user = byUsername();
       if (user && value.input.GroupName)
         user.groups = user.groups.filter(
@@ -246,8 +308,10 @@ class FakeCognitoAccessClient {
       if (index >= 0) this.users.splice(index, 1);
       return Promise.resolve({});
     }
-    if (value.constructor.name === "AdminUserGlobalSignOutCommand")
+    if (value.constructor.name === "AdminUserGlobalSignOutCommand") {
+      if (value.input.Username) this.globalSignOuts.push(value.input.Username);
       return Promise.resolve({});
+    }
     return Promise.reject(new Error("Unexpected fictional Cognito command"));
   }
 }
@@ -304,19 +368,211 @@ afterAll(async () => {
   await app.close();
 });
 
-function cookie(response: {
-  headers: { [key: string]: string | string[] | number | undefined };
-}): string {
+function cookie(
+  response: {
+    headers: { [key: string]: string | string[] | number | undefined };
+  },
+  name?: string,
+): string {
   const value = response.headers["set-cookie"];
-  const header = Array.isArray(value)
-    ? value[0]
+  const headers = Array.isArray(value)
+    ? value
     : typeof value === "string"
-      ? value
-      : undefined;
+      ? [value]
+      : [];
+  const header = name
+    ? headers.find((candidate) => candidate.startsWith(`${name}=`))
+    : headers[0];
   return header?.split(";")[0] ?? "";
 }
 
 describe("public/member API security flow", () => {
+  it("revokes sessions tied to a removed email while preserving other mailbox and person-scoped sessions", async () => {
+    const fixture = await executor.transaction(async (transaction) => {
+      const person = await transaction.query<{ id: string }>(
+        `INSERT INTO people(display_name, normalized_display_name, consent_version, consent_accepted_at)
+         VALUES ('Session Boundary Fiction', 'session boundary fiction', $1, now())
+         RETURNING id::text`,
+        [CONSENT_VERSION],
+      );
+      const personId = person.rows[0]!.id;
+      const emails = await transaction.query<{
+        id: string;
+        normalized_email: string;
+      }>(
+        `INSERT INTO person_emails(person_id, display_email, normalized_email, verified_at, is_primary)
+         VALUES
+           ($1::uuid, 'alpha-session@example.invalid', 'alpha-session@example.invalid', now(), true),
+           ($1::uuid, 'beta-session@example.invalid', 'beta-session@example.invalid', now(), false)
+         RETURNING id::text, normalized_email`,
+        [personId],
+      );
+      return { personId, emails: emails.rows };
+    });
+    const alphaRaw = `alpha-member-session-${Date.now()}`;
+    const betaRaw = `beta-member-session-${Date.now()}`;
+    const personScopedRaw = `person-scoped-session-${Date.now()}`;
+    const betaCsrf = `beta-csrf-${Date.now()}`;
+    const sessionRows = [
+      [
+        alphaRaw,
+        "alpha-session@example.invalid",
+        "alpha-session@example.invalid",
+        keyedHash(`alpha-csrf-${Date.now()}`, config.SESSION_HMAC_KEY),
+      ],
+      [
+        betaRaw,
+        "beta-session@example.invalid",
+        "beta-session@example.invalid",
+        keyedHash(betaCsrf, config.SESSION_HMAC_KEY),
+      ],
+      [
+        personScopedRaw,
+        null,
+        null,
+        keyedHash(`person-csrf-${Date.now()}`, config.SESSION_HMAC_KEY),
+      ],
+    ] as const;
+    for (const [raw, mailbox, display, csrfHash] of sessionRows) {
+      await executor.query(
+        `INSERT INTO member_sessions(session_hash, mailbox_normalized_email, mailbox_display_email,
+           selected_person_id, csrf_hash, issued_at, last_seen_at, idle_expires_at, absolute_expires_at)
+         VALUES ($1, $2, $3, $4::uuid, $5, now(), now(), now() + interval '1 day', now() + interval '1 day')`,
+        [
+          keyedHash(raw, config.SESSION_HMAC_KEY),
+          mailbox,
+          display,
+          fixture.personId,
+          csrfHash,
+        ],
+      );
+    }
+    const alphaCookie = `__Host-gis_member_session=${alphaRaw}`;
+    const betaCookie = `__Host-gis_member_session=${betaRaw}`;
+    const personScopedCookie = `__Host-gis_member_session=${personScopedRaw}`;
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: alphaCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
+      const quotaResponses = await Promise.all(
+        Array.from({ length: 6 }, (_, index) =>
+          app.inject({
+            method: "POST",
+            url: "/api/member/emails",
+            headers: {
+              ...origin,
+              cookie: betaCookie,
+              "x-csrf-token": betaCsrf,
+            },
+            payload: { email: `quota-${index}@example.invalid` },
+          }),
+        ),
+      );
+      expect(
+        quotaResponses.filter((response) => response.statusCode === 200),
+      ).toHaveLength(5);
+      expect(
+        quotaResponses.filter((response) => response.statusCode === 429),
+      ).toHaveLength(1);
+      const verificationResponses = [];
+      for (let index = 0; index < 11; index += 1) {
+        verificationResponses.push(
+          await app.inject({
+            method: "POST",
+            url: "/api/member/profile/verify",
+            headers: {
+              ...origin,
+              cookie: betaCookie,
+              "x-csrf-token": betaCsrf,
+            },
+            remoteAddress: "198.51.100.42",
+          }),
+        );
+      }
+      expect(
+        verificationResponses.filter((response) => response.statusCode === 200),
+      ).toHaveLength(10);
+      expect(
+        verificationResponses.filter((response) => response.statusCode === 429),
+      ).toHaveLength(1);
+      const alphaEmail = fixture.emails.find(
+        (candidate) =>
+          candidate.normalized_email === "alpha-session@example.invalid",
+      )!;
+      const removed = await app.inject({
+        method: "DELETE",
+        url: `/api/member/emails/${alphaEmail.id}`,
+        headers: { ...origin, cookie: betaCookie, "x-csrf-token": betaCsrf },
+      });
+      expect(removed.statusCode).toBe(200);
+      expect(removed.json()).toEqual({ removed: true, signedOut: false });
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: alphaCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+      const betaSession = await app.inject({
+        method: "GET",
+        url: "/api/member/session",
+        headers: { cookie: betaCookie },
+      });
+      expect(betaSession.statusCode).toBe(200);
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: personScopedCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
+      await executor.query(
+        `INSERT INTO person_emails(person_id, display_email, normalized_email, verified_at, is_primary)
+         VALUES ($1::uuid, 'gamma-session@example.invalid', 'gamma-session@example.invalid', now(), false)`,
+        [fixture.personId],
+      );
+      const betaEmail = fixture.emails.find(
+        (candidate) =>
+          candidate.normalized_email === "beta-session@example.invalid",
+      )!;
+      const selfRemoval = await app.inject({
+        method: "DELETE",
+        url: `/api/member/emails/${betaEmail.id}`,
+        headers: {
+          ...origin,
+          cookie: betaCookie,
+          "x-csrf-token": betaSession.json<{ csrfToken: string }>().csrfToken,
+        },
+      });
+      expect(selfRemoval.statusCode).toBe(200);
+      expect(selfRemoval.json()).toEqual({ removed: true, signedOut: true });
+      expect(String(selfRemoval.headers["set-cookie"])).toContain("Max-Age=0");
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/member/session",
+            headers: { cookie: betaCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+    } finally {
+      await executor.query("DELETE FROM people WHERE id = $1::uuid", [
+        fixture.personId,
+      ]);
+    }
+  });
+
   it("returns the same neutral response for known and unknown addresses", async () => {
     const request = (address: string) =>
       app.inject({
@@ -411,8 +667,10 @@ describe("public/member API security flow", () => {
     const initialInterview = interview.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
     }>();
     expect(initialInterview.revision).toBe(0);
+    expect(initialInterview.completenessConfidence).toBe("LOW");
     expect(initialInterview.messages).toHaveLength(1);
     const rejectedSensitiveInput = await app.inject({
       method: "POST",
@@ -481,6 +739,47 @@ describe("public/member API security flow", () => {
       revision: 0,
       messages: initialInterview.messages,
     });
+    const malformedExecutor = new PostgresExecutor(
+      process.env.DATABASE_URL ??
+        "postgres://gis:gis-local-only@localhost:5432/gifts_in_service",
+    );
+    const malformedApp = await buildApp({
+      config,
+      executor: malformedExecutor,
+      email,
+      ai: new MalformedInterviewAi(),
+    });
+    try {
+      const malformedRejected = await malformedApp.inject({
+        method: "POST",
+        url: "/api/member/interview/message",
+        headers: {
+          ...origin,
+          cookie: sessionCookie,
+          "x-csrf-token": csrf,
+        },
+        payload: {
+          response:
+            "This fictional response represents repeatedly malformed model output.",
+          revision: initialInterview.revision,
+        },
+      });
+      expect(malformedRejected.statusCode).toBe(502);
+      expect(malformedRejected.json()).toMatchObject({
+        error: MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
+      });
+    } finally {
+      await malformedApp.close();
+    }
+    expect(
+      await repository.getPendingInterview(
+        create.json<{ personId: string }>().personId,
+        new Date(),
+      ),
+    ).toMatchObject({
+      revision: 0,
+      messages: initialInterview.messages,
+    });
     const answer = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
@@ -492,8 +791,21 @@ describe("public/member API security flow", () => {
       },
     });
     expect(answer.statusCode).toBe(200);
-    const interviewRevision = answer.json<{ revision: number }>().revision;
+    const answerBody = answer.json<{
+      revision: number;
+      completenessConfidence: string;
+    }>();
+    const interviewRevision = answerBody.revision;
     expect(interviewRevision).toBe(1);
+    expect(answerBody.completenessConfidence).toMatch(/MODERATE|HIGH/u);
+    expect(
+      (
+        await repository.getPendingInterview(
+          create.json<{ personId: string }>().personId,
+          new Date(),
+        )
+      )?.completenessConfidence,
+    ).toBe(answerBody.completenessConfidence);
     const draft = await app.inject({
       method: "POST",
       url: "/api/member/interview/draft",
@@ -621,6 +933,7 @@ describe("public/member API security flow", () => {
     const initial = firstStart.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
       startedAt: string;
       expiresAt: string;
     }>();
@@ -684,10 +997,12 @@ describe("public/member API security flow", () => {
     const resumed = resumedResponse.json<{
       revision: number;
       messages: { role: string; content: string }[];
+      completenessConfidence: string;
       startedAt: string;
       expiresAt: string;
     }>();
     expect(resumed.revision).toBe(1);
+    expect(resumed.completenessConfidence).toBe("MODERATE");
     expect(resumed.messages.map((message) => message.content)).toContain(
       responseText,
     );
@@ -719,6 +1034,57 @@ describe("public/member API security flow", () => {
     );
     expect(proposal.message).toContain(proposal.proposedProfile);
 
+    const addedAfterProposal = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response:
+          "I also maintained computer networks and servers and could offer occasional troubleshooting advice.",
+        revision: proposal.revision,
+      },
+    });
+    expect(addedAfterProposal.statusCode).toBe(200);
+    const addition = addedAfterProposal.json<{
+      saved: false;
+      deletionRequested: false;
+      revision: number;
+      proposedProfile: null;
+    }>();
+    expect(addition.proposedProfile).toBeNull();
+    expect(addition.deletionRequested).toBe(false);
+    expect(
+      (await repository.getPendingInterview(personId, new Date()))
+        ?.proposedProfile,
+    ).toBeNull();
+
+    const reproposed = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response: "Please prepare the updated proposed profile now.",
+        revision: addition.revision,
+      },
+    });
+    expect(reproposed.statusCode).toBe(200);
+    const updatedProposal = reproposed.json<{
+      saved: false;
+      revision: number;
+      proposedProfile: string;
+    }>();
+    expect(updatedProposal.proposedProfile).toContain(
+      "maintained computer networks and servers",
+    );
+
     const semanticSubmission = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
@@ -729,7 +1095,7 @@ describe("public/member API security flow", () => {
       },
       payload: {
         response: "That looks good. Please submit it.",
-        revision: proposal.revision,
+        revision: updatedProposal.revision,
       },
     });
     expect(semanticSubmission.statusCode).toBe(200);
@@ -738,8 +1104,38 @@ describe("public/member API security flow", () => {
       await repository.getPendingInterview(personId, new Date()),
     ).toBeNull();
     expect((await repository.getPerson(personId))?.approvedText).toBe(
-      proposal.proposedProfile,
+      updatedProposal.proposedProfile,
     );
+
+    const deletionInterview = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/start",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {},
+    });
+    const deletionStart = deletionInterview.json<{ revision: number }>();
+    const deletionRequest = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: {
+        ...origin,
+        cookie: secondCookie,
+        "x-csrf-token": secondCsrf,
+      },
+      payload: {
+        response: "Please delete my entire profile.",
+        revision: deletionStart.revision,
+      },
+    });
+    expect(deletionRequest.statusCode).toBe(200);
+    expect(deletionRequest.json()).toMatchObject({
+      saved: false,
+      deletionRequested: true,
+    });
 
     const deleted = await app.inject({
       method: "DELETE",
@@ -1058,7 +1454,7 @@ describe("public/member API security flow", () => {
     }
   });
 
-  it("keeps Cognito password, TOTP setup, MFA, and reset challenges on the application page", async () => {
+  it("keeps Cognito challenges in-page and remembers only an opted-in browser for 30 days", async () => {
     const identityProvider = new FakeStaffIdentityProvider();
     const cognitoExecutor = new PostgresExecutor(
       process.env.DATABASE_URL ??
@@ -1162,6 +1558,7 @@ describe("public/member API security flow", () => {
         payload: {
           transaction: setupStep.transaction,
           response: "123456",
+          trustBrowser: true,
         },
       });
       expect(completed.statusCode).toBe(200);
@@ -1175,10 +1572,15 @@ describe("public/member API security flow", () => {
         groups: ["gis-staff"],
       });
       expect(completedBody.permissions).toContain("profile:search");
-      const staffCookie = cookie(completed);
+      const staffCookie = cookie(completed, "__Host-gis_staff_session");
+      const trustCookie = cookie(completed, "__Host-gis_staff_trusted_browser");
       expect(staffCookie).toContain("__Host-gis_staff_session=");
+      expect(trustCookie).toContain("__Host-gis_staff_trusted_browser=");
       expect(String(completed.headers["set-cookie"])).toContain(
         "Max-Age=86400",
+      );
+      expect(String(completed.headers["set-cookie"])).toContain(
+        "Max-Age=2592000",
       );
       const staffSessionTiming = await cognitoExecutor.query<{
         lifetime_seconds: number;
@@ -1193,17 +1595,32 @@ describe("public/member API security flow", () => {
         ],
       );
       expect(staffSessionTiming.rows[0]?.lifetime_seconds).toBe(86_400);
-      expect(
-        (
-          await cognitoApp.inject({
-            method: "GET",
-            url: "/api/staff/me",
-            headers: { cookie: staffCookie },
-          })
-        ).statusCode,
-      ).toBe(200);
+      const trustRaw = trustCookie.slice(trustCookie.indexOf("=") + 1);
+      const trustedDeviceTiming = await cognitoExecutor.query<{
+        lifetime_seconds: number;
+        device_credentials_ciphertext: string;
+      }>(
+        `SELECT extract(epoch FROM (expires_at - created_at))::int AS lifetime_seconds,
+           device_credentials_ciphertext
+         FROM staff_trusted_devices WHERE trust_hash = $1`,
+        [keyedHash(trustRaw, config.SESSION_HMAC_KEY)],
+      );
+      expect(trustedDeviceTiming.rows[0]?.lifetime_seconds).toBe(2_592_000);
+      const encryptedCredentials =
+        trustedDeviceTiming.rows[0]?.device_credentials_ciphertext;
+      expect(encryptedCredentials).not.toContain("fictional-device-secret");
+      expect(encryptedCredentials).not.toContain(trustRaw);
+      if (!encryptedCredentials)
+        throw new Error("Expected encrypted trusted-device credentials");
+      const me = await cognitoApp.inject({
+        method: "GET",
+        url: "/api/staff/me",
+        headers: { cookie: `${staffCookie}; ${trustCookie}` },
+      });
+      expect(me.statusCode).toBe(200);
+      expect(me.json<{ trustedBrowser: boolean }>().trustedBrowser).toBe(true);
 
-      const returning = await cognitoApp.inject({
+      const otherBrowser = await cognitoApp.inject({
         method: "POST",
         url: "/api/staff/auth/login",
         headers: origin,
@@ -1212,8 +1629,94 @@ describe("public/member API security flow", () => {
           password: "returning-user-password",
         },
       });
-      expect(returning.json<{ challenge: string }>().challenge).toBe(
+      expect(otherBrowser.json<{ challenge: string }>().challenge).toBe(
         "SOFTWARE_TOKEN_MFA",
+      );
+
+      const returning = await cognitoApp.inject({
+        method: "POST",
+        url: "/api/staff/auth/login",
+        headers: { ...origin, cookie: trustCookie },
+        payload: {
+          email: "staff-auth@example.invalid",
+          password: "returning-user-password",
+        },
+      });
+      expect(returning.statusCode).toBe(200);
+      expect(returning.json<{ authenticated: boolean }>().authenticated).toBe(
+        true,
+      );
+      const returningStaffCookie = cookie(
+        returning,
+        "__Host-gis_staff_session",
+      );
+      const returningCsrf = returning.json<{ csrfToken: string }>().csrfToken;
+      const signedOut = await cognitoApp.inject({
+        method: "POST",
+        url: "/api/staff/auth/logout",
+        headers: {
+          ...origin,
+          cookie: `${returningStaffCookie}; ${trustCookie}`,
+          "x-csrf-token": returningCsrf,
+        },
+        payload: {},
+      });
+      expect(signedOut.statusCode).toBe(200);
+      expect(String(signedOut.headers["set-cookie"])).not.toContain(
+        "__Host-gis_staff_trusted_browser",
+      );
+
+      const afterSignOut = await cognitoApp.inject({
+        method: "POST",
+        url: "/api/staff/auth/login",
+        headers: { ...origin, cookie: trustCookie },
+        payload: {
+          email: "staff-auth@example.invalid",
+          password: "returning-user-password",
+        },
+      });
+      expect(
+        afterSignOut.json<{ authenticated: boolean }>().authenticated,
+      ).toBe(true);
+      const forgotten = await cognitoApp.inject({
+        method: "POST",
+        url: "/api/staff/auth/forget-browser",
+        headers: {
+          ...origin,
+          cookie: `${cookie(afterSignOut, "__Host-gis_staff_session")}; ${trustCookie}`,
+          "x-csrf-token": afterSignOut.json<{ csrfToken: string }>().csrfToken,
+        },
+        payload: {},
+      });
+      expect(forgotten.statusCode).toBe(200);
+      expect(String(forgotten.headers["set-cookie"])).toContain(
+        "__Host-gis_staff_trusted_browser=;",
+      );
+      const revokedTrust = await cognitoExecutor.query<{ revoked: boolean }>(
+        `SELECT revoked_at IS NOT NULL AS revoked
+         FROM staff_trusted_devices WHERE trust_hash = $1`,
+        [keyedHash(trustRaw, config.SESSION_HMAC_KEY)],
+      );
+      expect(revokedTrust.rows[0]?.revoked).toBe(true);
+      expect(identityProvider.forgottenDevices).toContainEqual({
+        username: "canonical-cognito-username",
+        deviceKey: "us-east-1_10000000-0000-4000-8000-000000000001",
+      });
+
+      const historicalTrust = generateOpaqueSecret(config.SESSION_HMAC_KEY);
+      await cognitoExecutor.query(
+        `INSERT INTO staff_trusted_devices(
+           trust_hash, cognito_subject, cognito_username, login_identifier,
+           device_key, device_group_key, device_credentials_ciphertext,
+           created_at, last_used_at, expires_at)
+         VALUES ($1, $2, 'canonical-cognito-username', 'historical@example.invalid',
+           'us-east-1_10000000-0000-4000-8000-000000000009',
+           'fictional-device-group', $3, now(), now(), now() + interval '30 days')`,
+        [
+          historicalTrust.hash,
+          "30000000-0000-4000-8000-000000000001",
+          encryptedCredentials,
+        ],
       );
 
       const forgot = await cognitoApp.inject({
@@ -1239,7 +1742,123 @@ describe("public/member API security flow", () => {
       });
       expect(confirmed.statusCode).toBe(200);
       expect(identityProvider.resetConfirmed).toBe(true);
+      const resetTrustState = await cognitoExecutor.query<{
+        revoked: boolean;
+      }>(
+        `SELECT revoked_at IS NOT NULL AS revoked
+         FROM staff_trusted_devices WHERE trust_hash = $1`,
+        [historicalTrust.hash],
+      );
+      expect(resetTrustState.rows[0]?.revoked).toBe(true);
     } finally {
+      await cognitoExecutor.query(
+        `DELETE FROM staff_trusted_devices
+         WHERE login_identifier IN ('staff-auth@example.invalid', 'historical@example.invalid')`,
+      );
+      await cognitoApp.close();
+    }
+  });
+
+  it("fails closed to MFA for expired, unknown, and account-mismatched browser trust", async () => {
+    const identityProvider = new FakeStaffIdentityProvider();
+    const cognitoExecutor = new PostgresExecutor(
+      process.env.DATABASE_URL ??
+        "postgres://gis:gis-local-only@localhost:5432/gifts_in_service",
+    );
+    const cognitoApp = await buildApp({
+      config: { ...config, STAFF_AUTH_ADAPTER: "cognito" },
+      executor: cognitoExecutor,
+      email,
+      ai: new FakeAiAdapter(),
+      staffIdentityProvider: identityProvider,
+      staffTokenVerifier: new FakeStaffTokenVerifier(),
+    });
+    const credentials = {
+      deviceKey: "us-east-1_20000000-0000-4000-8000-000000000002",
+      deviceGroupKey: "fictional-fail-closed-group",
+      deviceSecret: "fictional-device-secret-that-is-long-enough",
+    };
+    const ciphertext = encryptShortLivedSecret(
+      JSON.stringify(credentials),
+      `${config.SESSION_HMAC_KEY}:staff-trusted-device:v1`,
+    );
+    const expired = generateOpaqueSecret(config.SESSION_HMAC_KEY);
+    const mismatched = generateOpaqueSecret(config.SESSION_HMAC_KEY);
+    try {
+      await cognitoExecutor.query(
+        `INSERT INTO staff_trusted_devices(
+           trust_hash, cognito_subject, cognito_username, login_identifier,
+           device_key, device_group_key, device_credentials_ciphertext,
+           created_at, last_used_at, expires_at)
+         VALUES
+           ($1, $3, 'canonical-cognito-username', 'staff-auth@example.invalid',
+             $5, $6, $7, now() - interval '29 days', now() - interval '29 days', now() - interval '1 second'),
+           ($2, $4, 'canonical-cognito-username', 'staff-auth@example.invalid',
+             $5, $6, $7, now(), now(), now() + interval '30 days')`,
+        [
+          expired.hash,
+          mismatched.hash,
+          "30000000-0000-4000-8000-000000000001",
+          "30000000-0000-4000-8000-000000000099",
+          credentials.deviceKey,
+          credentials.deviceGroupKey,
+          ciphertext,
+        ],
+      );
+
+      for (const rawTrust of [expired.raw, `${expired.raw}tampered`]) {
+        const response = await cognitoApp.inject({
+          method: "POST",
+          url: "/api/staff/auth/login",
+          headers: {
+            ...origin,
+            cookie: `__Host-gis_staff_trusted_browser=${rawTrust}`,
+          },
+          payload: {
+            email: "staff-auth@example.invalid",
+            password: "returning-user-password",
+          },
+        });
+        expect(response.json<{ challenge: string }>().challenge).toBe(
+          "SOFTWARE_TOKEN_MFA",
+        );
+        expect(String(response.headers["set-cookie"])).toContain(
+          "__Host-gis_staff_trusted_browser=;",
+        );
+      }
+
+      const wrongAccount = await cognitoApp.inject({
+        method: "POST",
+        url: "/api/staff/auth/login",
+        headers: {
+          ...origin,
+          cookie: `__Host-gis_staff_trusted_browser=${mismatched.raw}`,
+        },
+        payload: {
+          email: "staff-auth@example.invalid",
+          password: "returning-user-password",
+        },
+      });
+      expect(wrongAccount.statusCode).toBe(401);
+      expect(wrongAccount.json()).toEqual({
+        error: "This browser must complete MFA again.",
+      });
+      const states = await cognitoExecutor.query<{
+        trust_hash: string;
+        revoked: boolean;
+      }>(
+        `SELECT trust_hash, revoked_at IS NOT NULL AS revoked
+         FROM staff_trusted_devices WHERE trust_hash = ANY($1::text[])`,
+        [[expired.hash, mismatched.hash]],
+      );
+      expect(states.rows).toHaveLength(2);
+      expect(states.rows.every((row) => row.revoked)).toBe(true);
+      expect(identityProvider.forgottenDevices).toHaveLength(2);
+    } finally {
+      await cognitoExecutor.query(
+        "DELETE FROM staff_trusted_devices WHERE trust_hash = ANY($1::text[])",
+        [[expired.hash, mismatched.hash]],
+      );
       await cognitoApp.close();
     }
   });
@@ -1308,7 +1927,49 @@ describe("public/member API security flow", () => {
           ?.groups,
       ).toEqual(["gis-ministry-leader"]);
 
+      const audit = await cognitoApp.inject({
+        method: "GET",
+        url: "/api/staff/audit",
+        headers: { cookie: adminCookie },
+      });
+      expect(audit.statusCode).toBe(200);
+      const inviteAudit = audit
+        .json<{
+          events: {
+            action: string;
+            actor_username: string;
+            actor_id?: string;
+          }[];
+        }>()
+        .events.find((event) => event.action === "STAFF_INVITE");
+      expect(inviteAudit).toMatchObject({
+        actor_username: "admin@example.invalid",
+      });
+      expect(inviteAudit).not.toHaveProperty("actor_id");
+
       const lowerSubject = "30000000-0000-4000-8000-000000000002";
+      const lowerSessionRaw = `lower-staff-session-${Date.now()}`;
+      await cognitoExecutor.query(
+        `INSERT INTO staff_sessions(session_hash, cognito_subject, effective_groups,
+           effective_permissions, csrf_hash, issued_at, expires_at)
+         VALUES ($1, $2, ARRAY['gis-staff'], ARRAY['profile:search', 'profile:read', 'contact:read'],
+           $3, now(), now() + interval '1 day')`,
+        [
+          keyedHash(lowerSessionRaw, config.SESSION_HMAC_KEY),
+          lowerSubject,
+          keyedHash("lower-csrf", config.SESSION_HMAC_KEY),
+        ],
+      );
+      const lowerCookie = `__Host-gis_staff_session=${lowerSessionRaw}`;
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: lowerCookie },
+          })
+        ).statusCode,
+      ).toBe(200);
       const groupsChanged = await cognitoApp.inject({
         method: "POST",
         url: `/api/staff/access/${lowerSubject}/groups`,
@@ -1319,6 +1980,47 @@ describe("public/member API security flow", () => {
       expect(
         cognito.users.find((user) => user.subject === lowerSubject)?.groups,
       ).toEqual(["gis-ministry-leader", "gis-privacy-auditor"]);
+      expect(cognito.globalSignOuts).toContain("staff@example.invalid");
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: lowerCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
+
+      const failedMutationSessionRaw = `failed-mutation-session-${Date.now()}`;
+      await cognitoExecutor.query(
+        `INSERT INTO staff_sessions(session_hash, cognito_subject, effective_groups,
+           effective_permissions, csrf_hash, issued_at, expires_at)
+         VALUES ($1, $2, ARRAY['gis-ministry-leader'], ARRAY['profile:search', 'profile:read', 'contact:read'],
+           $3, now(), now() + interval '1 day')`,
+        [
+          keyedHash(failedMutationSessionRaw, config.SESSION_HMAC_KEY),
+          lowerSubject,
+          keyedHash("failed-mutation-csrf", config.SESSION_HMAC_KEY),
+        ],
+      );
+      const failedMutationCookie = `__Host-gis_staff_session=${failedMutationSessionRaw}`;
+      cognito.failNextGroupMutation = true;
+      const failedMutation = await cognitoApp.inject({
+        method: "POST",
+        url: `/api/staff/access/${lowerSubject}/groups`,
+        headers,
+        payload: { groups: ["gis-staff"] },
+      });
+      expect(failedMutation.statusCode).toBe(500);
+      expect(
+        (
+          await cognitoApp.inject({
+            method: "GET",
+            url: "/api/staff/me",
+            headers: { cookie: failedMutationCookie },
+          })
+        ).statusCode,
+      ).toBe(401);
 
       const disabled = await cognitoApp.inject({
         method: "POST",

@@ -1,6 +1,10 @@
-import { CONSENT_VERSION, type InterviewMessage } from "@gis/shared";
+import {
+  CONSENT_VERSION,
+  type InterviewCompleteness,
+  type InterviewMessage,
+} from "@gis/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { api, getMemberSession, setMemberCsrf } from "./api.js";
 import { Loading, Notice } from "./components.js";
 import { useConfig } from "./context.js";
@@ -61,9 +65,9 @@ export function LandingPage() {
           <h1 id="landing-title">Share your gifts, in your own words</h1>
           <div className="heading-accent" aria-hidden="true" />
           <p className="lede">
-            A short AI-assisted conversation helps you create a profile that you
-            review before anything is saved. You can always decline a future
-            request.
+            A short guided conversation with a computer assistant helps you
+            create a profile. You review the entire profile before it is saved,
+            and you can always decline a future request.
           </p>
           <div className="service-note">
             <span aria-hidden="true">♡</span>
@@ -184,9 +188,7 @@ export function MagicPage() {
   const token = useRef(fragmentToken());
   const started = useRef(false);
   const [error, setError] = useState(
-    token.current
-      ? ""
-      : "The link did not contain a token. Request a new link.",
+    token.current ? "" : "This secure link is incomplete. Request a new link.",
   );
   useEffect(() => {
     if (started.current || !token.current) return;
@@ -639,8 +641,11 @@ export function MemberPage() {
           <Link className="button secondary" to="/member/emails">
             Manage name and emails
           </Link>
-          <Link className="button danger" to="/member/delete">
-            Permanently delete
+          <Link
+            className="button danger profile-control-delete"
+            to="/member/delete"
+          >
+            Delete Profile
           </Link>
         </div>
       </section>
@@ -659,6 +664,7 @@ interface DraftState {
 interface PendingInterviewResponse {
   messages: InterviewMessage[];
   proposedProfile: string | null;
+  completenessConfidence: InterviewCompleteness;
   revision: number;
   currentProfile: string | null;
   startedAt: string;
@@ -669,9 +675,11 @@ type InterviewTurnResponse =
   | { saved: true }
   | {
       saved: false;
+      deletionRequested: boolean;
       message: string;
       revision: number;
       proposedProfile: string | null;
+      completenessConfidence: InterviewCompleteness;
     };
 
 export function InterviewPage() {
@@ -679,6 +687,8 @@ export function InterviewPage() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<InterviewMessage[]>([]);
   const [proposedProfile, setProposedProfile] = useState<string | null>(null);
+  const [completenessConfidence, setCompletenessConfidence] =
+    useState<InterviewCompleteness>("LOW");
   const [revision, setRevision] = useState<number | null>(null);
   const [currentProfile, setCurrentProfile] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState("");
@@ -703,6 +713,7 @@ export function InterviewPage() {
         if (!active) return;
         setMessages(response.messages);
         setProposedProfile(response.proposedProfile);
+        setCompletenessConfidence(response.completenessConfidence);
         setRevision(response.revision);
         setCurrentProfile(response.currentProfile);
         setExpiresAt(response.expiresAt);
@@ -762,6 +773,11 @@ export function InterviewPage() {
       setMessages([...next, { role: "assistant", content: response.message }]);
       setRevision(response.revision);
       setProposedProfile(response.proposedProfile);
+      setCompletenessConfidence(response.completenessConfidence);
+      if (response.deletionRequested) {
+        void navigate("/member/delete");
+        return;
+      }
     } catch (caught) {
       setMessages(previousMessages);
       setInput(responseText);
@@ -841,7 +857,7 @@ export function InterviewPage() {
     <div className="chat-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Private active-session conversation</p>
+          <p className="eyebrow">Private conversation</p>
           <h1>
             {currentProfile
               ? "Update your profile"
@@ -922,19 +938,30 @@ export function InterviewPage() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          aria-describedby="chat-input-help"
+          aria-describedby="chat-input-line-help chat-input-help"
           maxLength={3000}
           rows={4}
           disabled={busy}
           required
         />
+        <span id="chat-input-line-help" className="field-help">
+          Press Shift+Enter to add a new line.
+        </span>
         <span id="chat-input-help" className="field-help">
           {proposedProfile
-            ? "Press Enter to request changes or ask the assistant to submit this profile. Press Shift+Enter for a new line."
-            : "Press Enter to send. Press Shift+Enter for a new line."}
+            ? "Press Enter to request changes or ask the assistant to submit this profile."
+            : completenessConfidence === "LOW"
+              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time."
+              : "Press Enter to send, or create a draft if you are ready to wrap up."}
         </span>
         <div className="button-row">
-          {proposedProfile ? (
+          <button
+            className={`button ${proposedProfile ? "secondary" : "primary"}`}
+            disabled={busy || !input.trim()}
+          >
+            {busy && !submitting ? "Thinking…" : "Send response"}
+          </button>
+          {proposedProfile && (
             <button
               className="button primary"
               type="button"
@@ -943,18 +970,27 @@ export function InterviewPage() {
             >
               {submitting ? "Submitting profile…" : "Submit profile"}
             </button>
-          ) : (
-            <button className="button primary" disabled={busy || !input.trim()}>
-              {busy ? "Thinking…" : "Send response"}
-            </button>
           )}
           <button
             className="button secondary"
             type="button"
-            disabled={busy || messages.length < 3 || Boolean(proposedProfile)}
+            disabled={
+              busy ||
+              messages.length < 3 ||
+              completenessConfidence === "LOW" ||
+              Boolean(proposedProfile)
+            }
             onClick={() => void draft()}
           >
             Create a draft
+          </button>
+          <button
+            className="button danger profile-control-delete"
+            type="button"
+            disabled={busy}
+            onClick={() => void navigate("/member/delete")}
+          >
+            Delete Profile
           </button>
         </div>
       </form>
@@ -964,16 +1000,25 @@ export function InterviewPage() {
 
 export function ReviewPage() {
   const config = useConfig();
+  const location = useLocation();
   const navigate = useNavigate();
-  const state = useLocation().state as DraftState | null;
+  const [state] = useState<DraftState | null>(
+    () => location.state as DraftState | null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (location.state) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate]);
   if (!state)
     return (
       <div className="narrow">
         <h1>Draft no longer available</h1>
         <p>
-          Drafts stay only in memory. Your pending questions and answers remain
+          Final-review drafts stay only in the current browser tab and disappear
+          if you reload or close it. Your pending questions and answers remain
           available for up to 30 days, so you can return to the conversation and
           make a new draft.
         </p>
@@ -1052,6 +1097,7 @@ export function ReviewPage() {
 
 export function EmailManagementPage() {
   const { data, error, refresh } = useMember();
+  const navigate = useNavigate();
   const [notice, setNotice] = useState("");
   if (error)
     return (
@@ -1103,10 +1149,18 @@ export function EmailManagementPage() {
   }
   async function remove(id: string): Promise<void> {
     try {
-      await api(`/api/member/emails/${id}`, {
-        method: "DELETE",
-        csrf: "member",
-      });
+      const result = await api<{ removed: true; signedOut: boolean }>(
+        `/api/member/emails/${id}`,
+        {
+          method: "DELETE",
+          csrf: "member",
+        },
+      );
+      if (result.signedOut) {
+        setMemberCsrf("");
+        void navigate("/", { replace: true });
+        return;
+      }
       setNotice("Email association removed.");
       void refresh();
     } catch (caught) {
@@ -1214,7 +1268,7 @@ export function EmailManagementPage() {
 export function VerifyEmailPage() {
   const token = useRef(fragmentToken());
   const [status, setStatus] = useState(
-    token.current ? "" : "This link is missing its private token.",
+    token.current ? "" : "This secure link is incomplete.",
   );
   async function verify(): Promise<void> {
     try {
@@ -1299,10 +1353,14 @@ export function DeletePage() {
       <h1>Permanently delete your profile</h1>
       <Notice tone="warning">
         <p>
-          This immediately removes the live profile, embedding, contact
-          associations, sessions, and pending tokens. A minimal pseudonymous
-          purge event remains. Encrypted backups expire on their rotation
-          schedule, normally within 35 days.
+          This immediately removes your profile, contact information, unfinished
+          conversation, and access to that profile from signed-in devices and
+          sign-in links. A mailbox-wide sign-in link may still open another
+          profile associated with the same address or start a new profile, but
+          it cannot reopen the deleted profile. A small security record remains,
+          but it does not contain your name, email, or profile. Protected backup
+          copies expire normally within 35 days and cannot be viewed through the
+          working service.
         </p>
       </Notice>
       <div className="field">
@@ -1321,7 +1379,7 @@ export function DeletePage() {
       <div className="button-row">
         <button
           className="button danger"
-          disabled={busy || confirmation !== "DELETE"}
+          disabled={busy || confirmation.toUpperCase() !== "DELETE"}
           onClick={() => void remove()}
         >
           {busy ? "Deleting…" : "Permanently delete"}

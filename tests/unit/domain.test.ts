@@ -5,6 +5,7 @@ import {
   relevanceWithProfileLimitations,
   rerankerOutputSchema,
   SEARCH_RESULT_LIMIT,
+  containsForbiddenLogField,
   emitMetric,
   lifecycleActionsDue,
   lifecycleDates,
@@ -150,7 +151,7 @@ describe("grounded hybrid search", () => {
     expect(fused[0]?.matchedLists).toBe(2);
   });
 
-  it("rejects unknown IDs, duplicate IDs, and non-substring evidence", () => {
+  it("accepts a separate explanation with exact evidence and rejects invalid evidence", () => {
     const candidates = [
       {
         id: "10000000-0000-4000-8000-000000000001",
@@ -161,11 +162,12 @@ describe("grounded hybrid search", () => {
       {
         candidate_id: candidates[0]!.id,
         relevance: "HIGH" as const,
-        reason: "Relevant",
+        reason: "The candidate appears relevant to the request.",
         evidence: ["ice machines"],
         cautions: [],
       },
     ];
+    expect(candidates[0]!.approvedText).not.toContain(good[0]!.reason);
     expect(validateGroundedResults(good, candidates)).toEqual(good);
     expect(
       validateGroundedResults(
@@ -186,6 +188,26 @@ describe("grounded hybrid search", () => {
 });
 
 describe("sanitized logging", () => {
+  it("classifies interview follow-up notes as forbidden log fields", () => {
+    expect(
+      containsForbiddenLogField({ followUpNotes: ["unfinished thread"] }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({ follow_up_notes: ["unfinished thread"] }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({
+        conversationMemory: {
+          establishedFacts: ["fictional established fact"],
+          closedTopics: [],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({ conversation_memory: { closedTopics: [] } }),
+    ).toBe(true);
+  });
+
   it("drops bodies, queries, tokens, email, and raw IP fields", () => {
     const result = sanitizedLog({
       correlationId: "corr",

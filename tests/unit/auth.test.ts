@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   constantTimeEqual,
+  decryptShortLivedSecret,
+  encryptShortLivedSecret,
   generateOpaqueSecret,
   isTokenUsable,
   keyedHash,
@@ -9,7 +11,10 @@ import {
   normalizeDisplayName,
   normalizeEmail,
   STAFF_SESSION_TTL_SECONDS,
+  STAFF_TRUST_COOKIE,
+  STAFF_TRUST_TTL_SECONDS,
   staffCookieOptions,
+  staffTrustCookieOptions,
   validateCsrf,
   validateOrigin,
 } from "../../packages/auth/src/index.js";
@@ -71,6 +76,16 @@ describe("authentication primitives", () => {
     expect(validateCsrf("forged", raw.hash, key)).toBe(false);
   });
 
+  it("rejects non-canonical encrypted transaction encodings", () => {
+    const key = "e".repeat(32);
+    const encrypted = encryptShortLivedSecret("ok", key);
+    expect(encrypted.length % 4).toBe(0);
+    expect(decryptShortLivedSecret(encrypted, key)).toBe("ok");
+    expect(() => decryptShortLivedSecret(`${encrypted}x`, key)).toThrow(
+      "EncryptedSecretInvalid",
+    );
+  });
+
   it("issues member cookies for the fixed 30-day session lifetime", () => {
     expect(MEMBER_SESSION_TTL_SECONDS).toBe(2_592_000);
     expect(memberCookieOptions()).toMatchObject({
@@ -90,6 +105,18 @@ describe("authentication primitives", () => {
       sameSite: "lax",
       path: "/",
       maxAge: 86_400,
+    });
+  });
+
+  it("uses a separate host-only cookie for fixed 30-day browser trust", () => {
+    expect(STAFF_TRUST_COOKIE).toBe("__Host-gis_staff_trusted_browser");
+    expect(STAFF_TRUST_TTL_SECONDS).toBe(2_592_000);
+    expect(staffTrustCookieOptions()).toMatchObject({
+      secure: true,
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+      maxAge: 2_592_000,
     });
   });
 });

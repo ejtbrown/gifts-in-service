@@ -12,6 +12,17 @@ resource "aws_cloudwatch_dashboard" "this" {
       { type = "metric", x = 12, y = 0, width = 12, height = 6, properties = {
         title   = "Lambda duration", region = var.region, stat = "p95", period = 300,
         metrics = [for name in values(var.function_names) : ["AWS/Lambda", "Duration", "FunctionName", name]]
+      } },
+      { type = "metric", x = 0, y = 6, width = 24, height = 6, properties = {
+        title = "Security rejections", region = var.region, stat = "Sum", period = 300,
+        metrics = [
+          for pair in setproduct(["public", "staff"], keys(local.security_event_types)) : [
+            "GiftsInService", local.security_event_types[pair[1]].metric,
+            "Environment", trimprefix(var.prefix, "gis-"),
+            "Service", var.function_names[pair[0]],
+            "Operation", "SecurityRejection"
+          ]
+        ]
       } }
     ]
   })
@@ -31,6 +42,15 @@ resource "aws_sns_topic_subscription" "email" {
 
 locals {
   alarm_actions = distinct(concat([aws_sns_topic.alarms.arn], var.alarm_actions))
+  security_event_types = {
+    authentication = { metric = "AuthenticationFailures", threshold = 10 }
+    authorization  = { metric = "AuthorizationDenials", threshold = 5 }
+    rate_limit     = { metric = "RateLimitRejections", threshold = 10 }
+  }
+  security_event_alarms = {
+    for pair in setproduct(["public", "staff"], keys(local.security_event_types)) :
+    "${pair[0]}-${pair[1]}" => merge(local.security_event_types[pair[1]], { function = pair[0] })
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "function_errors" {
@@ -105,6 +125,26 @@ resource "aws_cloudwatch_metric_alarm" "application_errors" {
   period              = 300
   evaluation_periods  = 2
   threshold           = 2
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  tags                = var.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "security_events" {
+  for_each    = local.security_event_alarms
+  alarm_name  = "${var.prefix}-${replace(each.key, "_", "-")}"
+  namespace   = "GiftsInService"
+  metric_name = each.value.metric
+  dimensions = {
+    Environment = trimprefix(var.prefix, "gis-")
+    Service     = var.function_names[each.value.function]
+    Operation   = "SecurityRejection"
+  }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = each.value.threshold
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions

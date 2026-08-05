@@ -1,34 +1,50 @@
 import { createHmac } from "node:crypto";
 import {
+  AdminForgetDeviceCommand,
   AdminInitiateAuthCommand,
   AdminRespondToAuthChallengeCommand,
   AssociateSoftwareTokenCommand,
   CognitoIdentityProviderClient,
+  ConfirmDeviceCommand,
   ConfirmForgotPasswordCommand,
   ForgotPasswordCommand,
+  ListUsersCommand,
+  UpdateDeviceStatusCommand,
   VerifySoftwareTokenCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import {
+  createCognitoDeviceSrpSession,
+  createCognitoDeviceVerifier,
+  type CognitoDeviceCredentials,
+} from "./cognito-device-srp.js";
 
 export type StaffAuthChallenge =
-  | "NEW_PASSWORD_REQUIRED"
-  | "SOFTWARE_TOKEN_MFA"
-  | "MFA_SETUP";
+  "NEW_PASSWORD_REQUIRED" | "SOFTWARE_TOKEN_MFA" | "MFA_SETUP";
 
 export type StaffAuthStep =
-  | { authenticated: true; idToken: string }
+  | {
+      authenticated: true;
+      idToken: string;
+      username: string;
+      accessToken?: string;
+      newDeviceMetadata?: { deviceKey: string; deviceGroupKey: string };
+      trustedDeviceStatus?: "used" | "rejected";
+    }
   | {
       authenticated: false;
       challenge: StaffAuthChallenge;
       session: string;
       username: string;
       secretCode?: string;
+      trustedDeviceStatus?: "rejected";
     };
 
 export interface StaffIdentityProvider {
   startPasswordSignIn(
     username: string,
     password: string,
+    trustedDevice?: CognitoDeviceCredentials,
   ): Promise<StaffAuthStep>;
   respondToChallenge(input: {
     challenge: StaffAuthChallenge;
@@ -41,7 +57,13 @@ export interface StaffIdentityProvider {
     username: string,
     code: string,
     newPassword: string,
-  ): Promise<void>;
+  ): Promise<{ subject: string; cognitoUsername: string } | null>;
+  confirmTrustedDevice(input: {
+    accessToken: string;
+    deviceKey: string;
+    deviceGroupKey: string;
+  }): Promise<CognitoDeviceCredentials>;
+  forgetTrustedDevice(username: string, deviceKey: string): Promise<void>;
 }
 
 export interface VerifiedStaffToken {
@@ -57,7 +79,18 @@ interface CognitoAuthResponse {
   ChallengeName?: string | undefined;
   ChallengeParameters?: Record<string, string> | undefined;
   Session?: string | undefined;
-  AuthenticationResult?: { IdToken?: string | undefined } | undefined;
+  AuthenticationResult?:
+    | {
+        IdToken?: string | undefined;
+        AccessToken?: string | undefined;
+        NewDeviceMetadata?:
+          | {
+              DeviceKey?: string | undefined;
+              DeviceGroupKey?: string | undefined;
+            }
+          | undefined;
+      }
+    | undefined;
 }
 
 export function cognitoSecretHash(
@@ -97,6 +130,33 @@ export class CognitoStaffIdentityProvider implements StaffIdentityProvider {
   async startPasswordSignIn(
     username: string,
     password: string,
+    trustedDevice?: CognitoDeviceCredentials,
+  ): Promise<StaffAuthStep> {
+    if (!trustedDevice)
+      return this.#startPasswordSignIn(username, password, undefined);
+    try {
+      const response = await this.#startPasswordSignIn(
+        username,
+        password,
+        trustedDevice,
+      );
+      return response.authenticated
+        ? { ...response, trustedDeviceStatus: "used" }
+        : { ...response, trustedDeviceStatus: "rejected" };
+    } catch {
+      const fallback = await this.#startPasswordSignIn(
+        username,
+        password,
+        undefined,
+      );
+      return { ...fallback, trustedDeviceStatus: "rejected" };
+    }
+  }
+
+  async #startPasswordSignIn(
+    username: string,
+    password: string,
+    trustedDevice: CognitoDeviceCredentials | undefined,
   ): Promise<StaffAuthStep> {
     const response = await this.#client.send(
       new AdminInitiateAuthCommand({
@@ -107,9 +167,18 @@ export class CognitoStaffIdentityProvider implements StaffIdentityProvider {
           USERNAME: username,
           PASSWORD: password,
           SECRET_HASH: this.#secretHash(username),
+          ...(trustedDevice ? { DEVICE_KEY: trustedDevice.deviceKey } : {}),
         },
       }),
     );
+    if (response.ChallengeName === "DEVICE_SRP_AUTH") {
+      if (!trustedDevice) throw new Error("CognitoDeviceCredentialsMissing");
+      return this.#completeDeviceAuthentication(
+        response,
+        username,
+        trustedDevice,
+      );
+    }
     return this.#normalize(response, username);
   }
 
@@ -166,7 +235,7 @@ export class CognitoStaffIdentityProvider implements StaffIdentityProvider {
     username: string,
     code: string,
     newPassword: string,
-  ): Promise<void> {
+  ): Promise<{ subject: string; cognitoUsername: string } | null> {
     await this.#client.send(
       new ConfirmForgotPasswordCommand({
         ClientId: this.#clientId,
@@ -176,10 +245,146 @@ export class CognitoStaffIdentityProvider implements StaffIdentityProvider {
         SecretHash: this.#secretHash(username),
       }),
     );
+    try {
+      const escapedEmail = username
+        .replaceAll("\\", "\\\\")
+        .replaceAll('"', '\\"');
+      const users = await this.#client.send(
+        new ListUsersCommand({
+          UserPoolId: this.#userPoolId,
+          Filter: `email = "${escapedEmail}"`,
+          Limit: 2,
+        }),
+      );
+      const matched = users.Users?.find(
+        (user) =>
+          user.Attributes?.find(
+            (attribute) => attribute.Name === "email",
+          )?.Value?.toLocaleLowerCase("en-US") ===
+          username.toLocaleLowerCase("en-US"),
+      );
+      const subject = matched?.Attributes?.find(
+        (attribute) => attribute.Name === "sub",
+      )?.Value;
+      return subject && matched?.Username
+        ? { subject, cognitoUsername: matched.Username }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async confirmTrustedDevice(input: {
+    accessToken: string;
+    deviceKey: string;
+    deviceGroupKey: string;
+  }): Promise<CognitoDeviceCredentials> {
+    const verifier = createCognitoDeviceVerifier(
+      input.deviceGroupKey,
+      input.deviceKey,
+    );
+    await this.#client.send(
+      new ConfirmDeviceCommand({
+        AccessToken: input.accessToken,
+        DeviceKey: input.deviceKey,
+        DeviceName: "Gifts in Service trusted browser",
+        DeviceSecretVerifierConfig: {
+          Salt: verifier.salt,
+          PasswordVerifier: verifier.passwordVerifier,
+        },
+      }),
+    );
+    await this.#client.send(
+      new UpdateDeviceStatusCommand({
+        AccessToken: input.accessToken,
+        DeviceKey: input.deviceKey,
+        DeviceRememberedStatus: "remembered",
+      }),
+    );
+    return {
+      deviceKey: verifier.deviceKey,
+      deviceGroupKey: verifier.deviceGroupKey,
+      deviceSecret: verifier.deviceSecret,
+    };
+  }
+
+  async forgetTrustedDevice(
+    username: string,
+    deviceKey: string,
+  ): Promise<void> {
+    await this.#client.send(
+      new AdminForgetDeviceCommand({
+        UserPoolId: this.#userPoolId,
+        Username: username,
+        DeviceKey: deviceKey,
+      }),
+    );
   }
 
   #secretHash(username: string): string {
     return cognitoSecretHash(username, this.#clientId, this.#clientSecret);
+  }
+
+  async #completeDeviceAuthentication(
+    response: CognitoAuthResponse,
+    fallbackUsername: string,
+    trustedDevice: CognitoDeviceCredentials,
+  ): Promise<StaffAuthStep> {
+    const firstSession = response.Session;
+    const username =
+      response.ChallengeParameters?.USER_ID_FOR_SRP ??
+      response.ChallengeParameters?.USERNAME ??
+      fallbackUsername;
+    if (!firstSession) throw new Error("CognitoDeviceSrpSessionMissing");
+    const srp = createCognitoDeviceSrpSession(trustedDevice);
+    const verifier = await this.#client.send(
+      new AdminRespondToAuthChallengeCommand({
+        UserPoolId: this.#userPoolId,
+        ClientId: this.#clientId,
+        ChallengeName: "DEVICE_SRP_AUTH",
+        ChallengeResponses: {
+          USERNAME: username,
+          DEVICE_KEY: trustedDevice.deviceKey,
+          SRP_A: srp.publicA,
+          SECRET_HASH: this.#secretHash(username),
+        },
+        Session: firstSession,
+      }),
+    );
+    if (
+      verifier.ChallengeName !== "DEVICE_PASSWORD_VERIFIER" ||
+      !verifier.Session ||
+      !verifier.ChallengeParameters?.SRP_B ||
+      !verifier.ChallengeParameters.SALT ||
+      !verifier.ChallengeParameters.SECRET_BLOCK
+    )
+      throw new Error("CognitoDeviceVerifierChallengeInvalid");
+    const answer = srp.answer({
+      serverB: verifier.ChallengeParameters.SRP_B,
+      salt: verifier.ChallengeParameters.SALT,
+      secretBlock: verifier.ChallengeParameters.SECRET_BLOCK,
+    });
+    const verifierUsername =
+      verifier.ChallengeParameters.USERNAME ??
+      verifier.ChallengeParameters.USER_ID_FOR_SRP ??
+      username;
+    const completed = await this.#client.send(
+      new AdminRespondToAuthChallengeCommand({
+        UserPoolId: this.#userPoolId,
+        ClientId: this.#clientId,
+        ChallengeName: "DEVICE_PASSWORD_VERIFIER",
+        ChallengeResponses: {
+          USERNAME: verifierUsername,
+          DEVICE_KEY: trustedDevice.deviceKey,
+          PASSWORD_CLAIM_SIGNATURE: answer.passwordClaimSignature,
+          PASSWORD_CLAIM_SECRET_BLOCK: answer.passwordClaimSecretBlock,
+          TIMESTAMP: answer.timestamp,
+          SECRET_HASH: this.#secretHash(verifierUsername),
+        },
+        Session: verifier.Session,
+      }),
+    );
+    return this.#normalize(completed, username);
   }
 
   async #normalize(
@@ -187,7 +392,25 @@ export class CognitoStaffIdentityProvider implements StaffIdentityProvider {
     fallbackUsername: string,
   ): Promise<StaffAuthStep> {
     const idToken = response.AuthenticationResult?.IdToken;
-    if (idToken) return { authenticated: true, idToken };
+    if (idToken) {
+      const metadata = response.AuthenticationResult?.NewDeviceMetadata;
+      return {
+        authenticated: true,
+        idToken,
+        username: fallbackUsername,
+        ...(response.AuthenticationResult?.AccessToken
+          ? { accessToken: response.AuthenticationResult.AccessToken }
+          : {}),
+        ...(metadata?.DeviceKey && metadata.DeviceGroupKey
+          ? {
+              newDeviceMetadata: {
+                deviceKey: metadata.DeviceKey,
+                deviceGroupKey: metadata.DeviceGroupKey,
+              },
+            }
+          : {}),
+      };
+    }
     const session = response.Session;
     const username =
       response.ChallengeParameters?.USER_ID_FOR_SRP ??

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useNavigate, useParams } from "react-router";
 import QRCode from "qrcode";
 import { api, setStaffCsrf } from "./api.js";
 import { Loading, Notice } from "./components.js";
@@ -8,9 +8,7 @@ import type { StaffMe } from "./types.js";
 import type { StaffGroup } from "@gis/shared";
 
 type StaffAuthChallenge =
-  | "NEW_PASSWORD_REQUIRED"
-  | "SOFTWARE_TOKEN_MFA"
-  | "MFA_SETUP";
+  "NEW_PASSWORD_REQUIRED" | "SOFTWARE_TOKEN_MFA" | "MFA_SETUP";
 
 type StaffAuthResponse =
   | {
@@ -162,7 +160,9 @@ function useStaff(): { me: StaffMe | null; error: string } {
 
 function StaffNavigation({ me }: { me: StaffMe }) {
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<"signout" | "forget" | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const links = [
     {
@@ -178,7 +178,7 @@ function StaffNavigation({ me }: { me: StaffMe }) {
     {
       permission: "lifecycle:read",
       to: "/staff/lifecycle",
-      label: "Lifecycle exceptions",
+      label: "Profile maintenance",
     },
     {
       permission: "audit:read",
@@ -197,20 +197,25 @@ function StaffNavigation({ me }: { me: StaffMe }) {
     },
   ].filter((link) => me.permissions.includes(link.permission));
 
-  async function signOut(): Promise<void> {
-    setBusy(true);
+  async function signOut(forgetBrowser = false): Promise<void> {
+    setBusyAction(forgetBrowser ? "forget" : "signout");
     setError("");
     try {
-      await api("/api/staff/auth/logout", {
-        method: "POST",
-        csrf: "staff",
-        body: "{}",
-      });
+      await api(
+        forgetBrowser
+          ? "/api/staff/auth/forget-browser"
+          : "/api/staff/auth/logout",
+        {
+          method: "POST",
+          csrf: "staff",
+          body: "{}",
+        },
+      );
       setStaffCsrf("");
       void navigate("/staff", { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign out failed.");
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -230,14 +235,26 @@ function StaffNavigation({ me }: { me: StaffMe }) {
             ))}
           </nav>
         </div>
-        <button
-          className="button secondary"
-          type="button"
-          disabled={busy}
-          onClick={() => void signOut()}
-        >
-          {busy ? "Signing out…" : "Sign out"}
-        </button>
+        <div className="button-row staff-session-actions">
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busyAction !== null}
+            onClick={() => void signOut()}
+          >
+            {busyAction === "signout" ? "Signing out…" : "Sign out"}
+          </button>
+          {me.trustedBrowser && (
+            <button
+              className="text-button"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => void signOut(true)}
+            >
+              {busyAction === "forget" ? "Forgetting…" : "Forget this browser"}
+            </button>
+          )}
+        </div>
       </div>
       {error && (
         <Notice tone="warning">
@@ -346,6 +363,7 @@ export function StaffLandingPage() {
       challenge === "NEW_PASSWORD_REQUIRED"
         ? formString(data, "newPassword")
         : formString(data, "code").replaceAll(/\s/gu, "");
+    const trustBrowser = data.get("trustBrowser") === "on";
     if (
       challenge === "NEW_PASSWORD_REQUIRED" &&
       response !== data.get("confirmPassword")
@@ -359,7 +377,7 @@ export function StaffLandingPage() {
       finishSignIn(
         await api<StaffAuthResponse>("/api/staff/auth/challenge", {
           method: "POST",
-          body: JSON.stringify({ transaction, response }),
+          body: JSON.stringify({ transaction, response, trustBrowser }),
         }),
       );
     } catch (caught) {
@@ -460,9 +478,10 @@ export function StaffLandingPage() {
         <p className="eyebrow">Authorized workforce access</p>
         <h1>Staff sign in</h1>
         <p>
-          Sign in with your church staff account. Cognito verifies your password
-          and authenticator code without taking you away from this page. Gifts
-          in Service does not store your password.
+          Sign in with your church staff account. The secure staff account
+          service checks your password and authenticator-app code without taking
+          you away from this page. Gifts in Service does not store your
+          password.
         </p>
         {error && (
           <Notice tone="warning">
@@ -561,6 +580,16 @@ export function StaffLandingPage() {
                     </p>
                   </>
                 )}
+                <label className="check trusted-browser-choice">
+                  <input name="trustBrowser" type="checkbox" disabled={busy} />
+                  <span>
+                    Trust this browser for 30 days
+                    <small className="field-help">
+                      Only use this on a private device. You will still enter
+                      your password after the 24-hour staff session expires.
+                    </small>
+                  </span>
+                </label>
                 <OneTimeCodeField
                   id="staff-auth-code"
                   autoFocus
@@ -648,9 +677,9 @@ export function StaffLandingPage() {
       <p className="eyebrow">Authorized workforce access</p>
       <h1>Staff sign in</h1>
       <p>
-        Production uses an in-page Cognito sign-in with TOTP MFA. The choices
-        below are clearly marked local-development role simulations and are
-        disabled by production configuration.
+        The live service uses a same-page staff sign-in with an
+        authenticator-app code. The choices below are test accounts for local
+        development and are disabled in the live service.
       </p>
       {error && (
         <Notice tone="warning">
@@ -787,7 +816,7 @@ export function StaffSearchPage() {
                 <span>
                   {result.explanationGeneratedByAi
                     ? "AI-generated explanation"
-                    : "Deterministic explanation"}
+                    : "Fixed-rule explanation"}
                 </span>
               </div>
               <p className="reason">{result.reason}</p>
@@ -829,6 +858,8 @@ export function StaffProfilePage() {
   const [data, setData] = useState<StaffProfileData | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [copiedEmail, setCopiedEmail] = useState("");
+  const [copyError, setCopyError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function load(): Promise<void> {
@@ -894,6 +925,21 @@ export function StaffProfilePage() {
     }
   }
 
+  async function copyEmail(email: string): Promise<void> {
+    setCopyError("");
+    try {
+      if (!navigator.clipboard)
+        throw new Error("Clipboard access is unavailable");
+      await navigator.clipboard.writeText(email);
+      setCopiedEmail(email);
+    } catch {
+      setCopiedEmail("");
+      setCopyError(
+        "The email address could not be copied. Select the address and copy it manually.",
+      );
+    }
+  }
+
   if (authError) return <AccessDenied message={authError} />;
   if (!me) return <Loading message="Checking staff access…" />;
   if (!me.permissions.includes("profile:read"))
@@ -947,11 +993,25 @@ export function StaffProfilePage() {
         <section>
           <h2>Verified contact associations</h2>
           {data.emails.length ? (
-            <ul>
+            <ul className="email-list staff-email-list">
               {data.emails.map((email) => (
                 <li key={email.displayEmail}>
-                  {email.displayEmail} —{" "}
-                  {email.deliverability.replaceAll("_", " ").toLowerCase()}
+                  <button
+                    className="button secondary staff-email-copy"
+                    type="button"
+                    aria-label={`Copy ${email.displayEmail} to clipboard`}
+                    onClick={() => void copyEmail(email.displayEmail)}
+                  >
+                    {copiedEmail === email.displayEmail ? "Copied" : "Copy"}
+                  </button>
+                  <div className="staff-email-details">
+                    <a href={`mailto:${email.displayEmail}`}>
+                      {email.displayEmail}
+                    </a>
+                    <span>
+                      {email.deliverability.replaceAll("_", " ").toLowerCase()}
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -961,6 +1021,14 @@ export function StaffProfilePage() {
           <p>
             Contacting a person does not assign them or commit them to serve.
           </p>
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {copiedEmail ? `${copiedEmail} copied to the clipboard.` : ""}
+          </span>
+          {copyError && (
+            <p className="form-error" role="alert">
+              {copyError}
+            </p>
+          )}
         </section>
       )}
       {(canPause || canReactivate || canPurge) && (
@@ -1167,7 +1235,7 @@ export function LifecyclePage() {
         setError(
           caught instanceof Error
             ? caught.message
-            : "Lifecycle exceptions could not be loaded.",
+            : "Profile reminder and deletion issues could not be loaded.",
         ),
       );
   }, [me]);
@@ -1176,13 +1244,13 @@ export function LifecyclePage() {
   if (!me) return <Loading message="Checking staff access…" />;
   if (!me.permissions.includes("lifecycle:read"))
     return (
-      <AccessDenied message="This role cannot view lifecycle exceptions." />
+      <AccessDenied message="This role cannot view profile maintenance issues." />
     );
   return (
     <div>
       <StaffNavigation me={me} />
       <p className="eyebrow">Administrator controls</p>
-      <h1>Lifecycle exceptions</h1>
+      <h1>Profile reminder and deletion issues</h1>
       <p>
         These records have no verified, deliverable email address. Automated
         reminders cannot reach them, so an administrator should review the
@@ -1195,7 +1263,7 @@ export function LifecyclePage() {
       )}
       {!error && exceptions.length === 0 && (
         <Notice tone="success">
-          <p>No lifecycle delivery exceptions need attention.</p>
+          <p>No profile reminder or deletion issues need attention.</p>
         </Notice>
       )}
       {exceptions.length > 0 && (
@@ -1207,7 +1275,7 @@ export function LifecyclePage() {
                 <th>Status</th>
                 <th>Verified addresses</th>
                 <th>Last verified</th>
-                <th>Scheduled purge</th>
+                <th>Scheduled permanent deletion</th>
                 <th>
                   <span className="visually-hidden">Actions</span>
                 </th>
@@ -1246,7 +1314,7 @@ export function AuditPage() {
       id: string;
       occurred_at: string;
       action: string;
-      actor_id: string;
+      actor_username: string;
       succeeded: boolean;
     }[]
   >([]);
@@ -1258,7 +1326,7 @@ export function AuditPage() {
         id: string;
         occurred_at: string;
         action: string;
-        actor_id: string;
+        actor_username: string;
         succeeded: boolean;
       }[];
     }>("/api/staff/audit")
@@ -1279,10 +1347,11 @@ export function AuditPage() {
     <div>
       <StaffNavigation me={me} />
       <p className="eyebrow">Accountability controls</p>
-      <h1>Privacy and lifecycle audit</h1>
+      <h1>Privacy and profile-history audit</h1>
       <p>
-        Profile prose and contact details are intentionally absent. Raw staff
-        query text is separately protected and expires after 90 days.
+        Member profile text and contact details are intentionally absent. Staff
+        usernames come from the current staff account directory. The exact text
+        of staff searches is protected separately and deleted after 90 days.
       </p>
       {error && (
         <Notice tone="warning">
@@ -1295,7 +1364,7 @@ export function AuditPage() {
             <tr>
               <th>Time</th>
               <th>Action</th>
-              <th>Actor</th>
+              <th>Actor username</th>
               <th>Result</th>
             </tr>
           </thead>
@@ -1304,7 +1373,7 @@ export function AuditPage() {
               <tr key={event.id}>
                 <td>{formatDateTime(event.occurred_at)}</td>
                 <td>{event.action}</td>
-                <td>{event.actor_id}</td>
+                <td>{event.actor_username}</td>
                 <td>{event.succeeded ? "Succeeded" : "Failed"}</td>
               </tr>
             ))}
@@ -1498,7 +1567,7 @@ export function StaffAccessPage() {
             ? "Staff user disabled and signed out."
             : action === "enable"
               ? "Staff user enabled."
-              : "Application and Cognito sessions revoked.",
+              : "Staff user signed out on every device.",
       );
       await refresh();
     } catch (caught) {
@@ -1513,13 +1582,13 @@ export function StaffAccessPage() {
   return (
     <div>
       <StaffNavigation me={me} />
-      <p className="eyebrow">Cognito access administration</p>
+      <p className="eyebrow">Staff account administration</p>
       <h1>Staff access</h1>
       <p>
         Invite, assign roles, disable, re-enable, sign out, or delete
         lower-privilege staff accounts. Administrator and
-        technical-administrator access requires the documented AWS-authorized
-        process and cannot be changed here.
+        technical-administrator access requires the documented high-privilege
+        approval process and cannot be changed here.
       </p>
       {notice && (
         <Notice>
@@ -1555,7 +1624,7 @@ export function StaffAccessPage() {
         >
           {busyAction === "invite"
             ? "Sending invitation…"
-            : "Send Cognito invitation"}
+            : "Send staff invitation"}
         </button>
       </form>
       <div className="result-grid">
@@ -1583,7 +1652,7 @@ export function StaffAccessPage() {
                 <Notice>
                   <p>
                     High-privilege access is read-only here and must be managed
-                    through the AWS-authorized process.
+                    through the documented approval process.
                   </p>
                 </Notice>
               ) : (

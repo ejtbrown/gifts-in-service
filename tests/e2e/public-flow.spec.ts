@@ -127,7 +127,16 @@ test("fictional member resumes a pending interview through a new link, approves 
   await expect(
     page.getByRole("heading", { name: "Tell us about your gifts" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
   const response = page.getByLabel("Your response");
+  await expect(
+    page.getByText("Press Shift+Enter to add a new line.", { exact: true }),
+  ).toBeVisible();
+  await response.fill("First fictional line");
+  await response.press("Shift+Enter");
+  await expect(response).toHaveValue("First fictional line\n");
   const rejectedSensitiveInput = "My fictional SSN is 000-00-0000.";
   await response.fill(rejectedSensitiveInput);
   await response.press("Enter");
@@ -159,6 +168,22 @@ test("fictional member resumes a pending interview through a new link, approves 
     .getByRole("button", { name: "Continue as Complete Browser Fiction" })
     .click();
   await expect(page.getByText(firstAnswer, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Create a draft" }).click();
+  await expect(page.getByLabel("Exact proposed profile")).toContainText(
+    "WordPress and React",
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Draft no longer available" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Final-review drafts stay only in the current browser tab/u),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Return to conversation" }).click();
+  await expect(page.getByText(firstAnswer, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create a draft" }).click();
   const exactDraft = await page
     .getByLabel("Exact proposed profile")
@@ -181,6 +206,9 @@ test("fictional member resumes a pending interview through a new link, approves 
   await page.getByRole("button", { name: "Let Me Update This" }).click();
   await expect(
     page.getByRole("heading", { name: "Update your profile" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
   ).toBeVisible();
   await expect(
     page
@@ -212,6 +240,23 @@ test("fictional member resumes a pending interview through a new link, approves 
       .last()
       .getByText(/prefer one-time accessibility reviews/u),
   ).toBeVisible();
+  const postProposalAddition =
+    "Also add that I maintained computer networks and servers and can offer occasional troubleshooting advice.";
+  await page.getByLabel("Your response").fill(postProposalAddition);
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByText(postProposalAddition, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Submit profile" }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Your response")
+    .fill("Please prepare the updated proposed profile now.");
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByRole("button", { name: "Submit profile" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Submit profile" }).click();
   await expect(
     page.getByRole("heading", { name: "Complete Browser Fiction" }),
@@ -224,10 +269,23 @@ test("fictional member resumes a pending interview through a new link, approves 
       .locator(".profile-prose")
       .getByText(/prefer one-time accessibility reviews/u),
   ).toBeVisible();
+  await expect(
+    page.locator(".profile-prose").getByText(/computer networks and servers/u),
+  ).toBeVisible();
   await page.getByRole("button", { name: "That Looks Right" }).click();
   await expect(page.getByText("Your profile was reconfirmed.")).toBeVisible();
-  await page.getByRole("link", { name: "Permanently delete" }).click();
-  await page.getByLabel("Type DELETE to confirm").fill("DELETE");
+  await expect(
+    page.getByRole("link", { name: "Delete Profile" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Let Me Update This" }).click();
+  await page
+    .getByLabel("Your response")
+    .fill("Please delete my entire Gifts in Service profile.");
+  await page.getByRole("button", { name: "Send response" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Permanently delete your profile" }),
+  ).toBeVisible();
+  await page.getByLabel("Type DELETE to confirm").fill("delete");
   await page.getByRole("button", { name: "Permanently delete" }).click();
   await expect(
     page.getByRole("heading", { name: "Share your gifts, in your own words" }),
@@ -259,6 +317,9 @@ test("shared mailbox chooser keeps two fictional profiles distinct", async ({
   await expect(
     page.getByRole("heading", { name: "Update your profile" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Delete Profile" }),
+  ).toBeVisible();
 });
 
 test("landing disclosure is present before identity fields and request response stays neutral", async ({
@@ -286,6 +347,9 @@ test("landing disclosure is present before identity fields and request response 
   await summaries.nth(0).focus();
   await summaries.nth(0).press("Enter");
   await expect(sections.nth(0)).toHaveAttribute("open", "");
+  await expect(sections.nth(0)).toContainText(
+    "including anyone with access to a shared mailbox",
+  );
   await summaries.nth(1).click();
   await expect(
     page.getByRole("link", {
@@ -320,6 +384,66 @@ test("landing disclosure is present before identity fields and request response 
   ).toBeVisible();
 });
 
+test("policy copy matches mailbox access, draft retention, and search evidence behavior", async ({
+  page,
+}) => {
+  await page.goto("/ai-use");
+  await expect(page.locator("main")).toContainText(
+    "If the address is a shared mailbox, anyone with access to that mailbox may be able to open it.",
+  );
+  await expect(page.locator("main")).toContainText(
+    "A separate draft opened on the final-review page",
+  );
+  await expect(page.locator("main")).toContainText(
+    "Every result includes evidence copied exactly from the approved profile.",
+  );
+  await expect(page.locator("main")).toContainText(
+    "The AI may write a separate explanation of the possible match.",
+  );
+
+  await page.goto("/privacy");
+  await expect(page.locator("main")).toContainText(
+    "A mailbox-wide sign-in link may still open another profile associated with the same address or start a new profile, but it cannot reopen the deleted profile.",
+  );
+});
+
+test("necessary technical terms open keyboard-accessible plain-language explanations", async ({
+  page,
+}) => {
+  await page.goto("/ai-use");
+  const aiTerm = page.getByRole("button", {
+    name: "Artificial intelligence (AI)",
+  });
+  await aiTerm.click();
+  const aiExplanation = page.getByRole("dialog", {
+    name: "Artificial intelligence (AI)",
+  });
+  await expect(aiExplanation).toBeVisible();
+  await expect(aiExplanation).toContainText(
+    "It is a tool, not a person, and it does not understand or judge you the way a person does.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(aiExplanation).not.toBeVisible();
+  await expect(aiTerm).toBeFocused();
+
+  await page.goto("/privacy");
+  const providerTerm = page.getByRole("button", {
+    name: "Amazon Web Services (AWS)",
+  });
+  await providerTerm.click();
+  const providerExplanation = page.getByRole("dialog", {
+    name: "Amazon Web Services (AWS)",
+  });
+  await expect(providerExplanation).toContainText(
+    "the outside technology company that runs the secure computers, database, email, sign-in, computer assistant, and search tools",
+  );
+  await providerExplanation
+    .getByRole("button", { name: "Close explanation" })
+    .click();
+  await expect(providerExplanation).not.toBeVisible();
+  await expect(providerTerm).toBeFocused();
+});
+
 test("magic page redeems automatically, removes its fragment, and refuses a missing token", async ({
   page,
 }) => {
@@ -333,7 +457,7 @@ test("magic page redeems automatically, removes its fragment, and refuses a miss
   await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
   await page.reload();
   await expect(
-    page.getByText("The link did not contain a token. Request a new link."),
+    page.getByText("This secure link is incomplete. Request a new link."),
   ).toBeVisible();
 });
 
