@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { BedrockAiAdapter } from "../../packages/ai/src/index.js";
+import {
+  BedrockAiAdapter,
+  MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
+} from "../../packages/ai/src/index.js";
 
 const config = {
   region: "us-east-1",
@@ -62,8 +65,117 @@ describe("Bedrock conversation formatting", () => {
         name: "AiSafetyInterventionError",
         category,
       });
+      expect(send).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("retries a malformed interview decision without surfacing the recovered failure", async () => {
+    const malformedResponse = {
+      output: {
+        message: {
+          content: [
+            {
+              toolUse: {
+                name: "record_interview_decision",
+                input: {
+                  action: "CONTINUE",
+                  message: "This response omitted required state.",
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const recoveredResponse = {
+      output: {
+        message: {
+          content: [
+            {
+              toolUse: {
+                name: "record_interview_decision",
+                input: {
+                  action: "CONTINUE",
+                  message: "What else would you like to share?",
+                  referenced_profile_text: null,
+                  invalidate_proposed_profile: false,
+                  completeness_confidence: "MODERATE",
+                  follow_up_notes: [],
+                  conversation_memory: emptyConversationMemory,
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(malformedResponse)
+      .mockResolvedValueOnce(recoveredResponse);
+    const adapter = new BedrockAiAdapter(config, { send } as never);
+
+    await expect(
+      adapter.interview(
+        [
+          {
+            role: "assistant",
+            content: "What skills would you like to share?",
+          },
+          {
+            role: "user",
+            content: "I organize fictional community events.",
+          },
+        ],
+        interviewContext,
+      ),
+    ).resolves.toMatchObject({
+      action: "CONTINUE",
+      message: "What else would you like to share?",
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+    const retryPrompt = (
+      send.mock.calls[1]?.[0] as {
+        input?: { system?: { text?: string }[] };
+      }
+    ).input?.system?.[0]?.text;
+    expect(retryPrompt).toContain(
+      "a previous tool response did not match the required schema",
+    );
+  });
+
+  it("reports a malformed interview decision only after bounded retries are exhausted", async () => {
+    const send = vi.fn(() =>
+      Promise.resolve({
+        output: {
+          message: {
+            content: [{ text: "No required tool decision was returned." }],
+          },
+        },
+      }),
+    );
+    const adapter = new BedrockAiAdapter(config, { send } as never);
+
+    await expect(
+      adapter.interview(
+        [
+          {
+            role: "assistant",
+            content: "What skills would you like to share?",
+          },
+          {
+            role: "user",
+            content: "I organize fictional community events.",
+          },
+        ],
+        interviewContext,
+      ),
+    ).rejects.toMatchObject({
+      name: "AiMalformedInterviewResponseError",
+      message: MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
+    });
+    expect(send).toHaveBeenCalledTimes(3);
+  });
 
   it("makes a browser transcript with a local assistant opening valid for Converse", async () => {
     let capturedCommand: unknown;

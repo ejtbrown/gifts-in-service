@@ -1,7 +1,9 @@
 import { PostgresExecutor, Repository } from "../../packages/db/src/index.js";
 import {
+  AiMalformedInterviewResponseError,
   AiSafetyInterventionError,
   FakeAiAdapter,
+  MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
   SENSITIVE_INFORMATION_REJECTION_MESSAGE,
 } from "../../packages/ai/src/index.js";
 import { keyedHash, sha256 } from "../../packages/auth/src/index.js";
@@ -49,6 +51,12 @@ class GuardrailInterventionAi extends FakeAiAdapter {
     return Promise.reject(
       new AiSafetyInterventionError("SENSITIVE_INFORMATION"),
     );
+  }
+}
+
+class MalformedInterviewAi extends FakeAiAdapter {
+  override interview(): Promise<never> {
+    return Promise.reject(new AiMalformedInterviewResponseError());
   }
 }
 
@@ -650,6 +658,47 @@ describe("public/member API security flow", () => {
       });
     } finally {
       await guardrailApp.close();
+    }
+    expect(
+      await repository.getPendingInterview(
+        create.json<{ personId: string }>().personId,
+        new Date(),
+      ),
+    ).toMatchObject({
+      revision: 0,
+      messages: initialInterview.messages,
+    });
+    const malformedExecutor = new PostgresExecutor(
+      process.env.DATABASE_URL ??
+        "postgres://gis:gis-local-only@localhost:5432/gifts_in_service",
+    );
+    const malformedApp = await buildApp({
+      config,
+      executor: malformedExecutor,
+      email,
+      ai: new MalformedInterviewAi(),
+    });
+    try {
+      const malformedRejected = await malformedApp.inject({
+        method: "POST",
+        url: "/api/member/interview/message",
+        headers: {
+          ...origin,
+          cookie: sessionCookie,
+          "x-csrf-token": csrf,
+        },
+        payload: {
+          response:
+            "This fictional response represents repeatedly malformed model output.",
+          revision: initialInterview.revision,
+        },
+      });
+      expect(malformedRejected.statusCode).toBe(502);
+      expect(malformedRejected.json()).toMatchObject({
+        error: MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
+      });
+    } finally {
+      await malformedApp.close();
     }
     expect(
       await repository.getPendingInterview(

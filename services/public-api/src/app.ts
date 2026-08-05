@@ -16,6 +16,7 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import {
+  AiMalformedInterviewResponseError,
   AiSafetyInterventionError,
   BedrockAiAdapter,
   FakeAiAdapter,
@@ -568,15 +569,18 @@ export async function buildApp(
     const status =
       error instanceof AiSafetyInterventionError
         ? 422
-        : error instanceof z.ZodError
-          ? 400
-          : (suppliedStatus ?? 500);
+        : error instanceof AiMalformedInterviewResponseError
+          ? 502
+          : error instanceof z.ZodError
+            ? 400
+            : (suppliedStatus ?? 500);
     process.stderr.write(
       `${JSON.stringify(sanitizedLog({ correlationId: request.id, route: request.routeOptions.url ?? "unknown", status, durationMs: 0, errorClass: errorClass(error) }))}\n`,
     );
     void reply.status(status).send({
       error:
-        error instanceof AiSafetyInterventionError
+        error instanceof AiSafetyInterventionError ||
+        error instanceof AiMalformedInterviewResponseError
           ? error.message
           : status === 400
             ? "The request was not valid."

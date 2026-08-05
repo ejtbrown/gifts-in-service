@@ -131,6 +131,12 @@ test("fictional member resumes a pending interview through a new link, approves 
     page.getByRole("button", { name: "Delete Profile" }),
   ).toBeVisible();
   const response = page.getByLabel("Your response");
+  await expect(
+    page.getByText("Press Shift+Enter to add a new line.", { exact: true }),
+  ).toBeVisible();
+  await response.fill("First fictional line");
+  await response.press("Shift+Enter");
+  await expect(response).toHaveValue("First fictional line\n");
   const rejectedSensitiveInput = "My fictional SSN is 000-00-0000.";
   await response.fill(rejectedSensitiveInput);
   await response.press("Enter");

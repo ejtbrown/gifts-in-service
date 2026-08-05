@@ -938,18 +938,21 @@ export function InterviewPage() {
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          aria-describedby="chat-input-help"
+          aria-describedby="chat-input-line-help chat-input-help"
           maxLength={3000}
           rows={4}
           disabled={busy}
           required
         />
+        <span id="chat-input-line-help" className="field-help">
+          Press Shift+Enter to add a new line.
+        </span>
         <span id="chat-input-help" className="field-help">
           {proposedProfile
-            ? "Press Enter to request changes or ask the assistant to submit this profile. Press Shift+Enter for a new line."
+            ? "Press Enter to request changes or ask the assistant to submit this profile."
             : completenessConfidence === "LOW"
-              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time. Press Shift+Enter for a new line."
-              : "Press Enter to send, or create a draft if you are ready to wrap up. Press Shift+Enter for a new line."}
+              ? "Press Enter to send. The draft option will become available once the conversation has enough detail; you can also ask to wrap up at any time."
+              : "Press Enter to send, or create a draft if you are ready to wrap up."}
         </span>
         <div className="button-row">
           <button
