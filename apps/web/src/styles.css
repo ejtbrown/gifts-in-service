@@ -753,6 +753,21 @@ textarea {
 .email-list span {
   color: var(--muted);
 }
+.staff-email-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: initial;
+}
+.staff-email-copy {
+  justify-self: start;
+}
+.staff-email-details {
+  min-width: 0;
+}
+.staff-email-details a {
+  overflow-wrap: anywhere;
+}
 .text-button,
 .text-link {
   background: none;

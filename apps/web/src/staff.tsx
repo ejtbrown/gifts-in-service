@@ -963,10 +963,18 @@ export function StaffProfilePage() {
         <section>
           <h2>Verified contact associations</h2>
           {data.emails.length ? (
-            <ul className="email-list">
+            <ul className="email-list staff-email-list">
               {data.emails.map((email) => (
                 <li key={email.displayEmail}>
-                  <div>
+                  <button
+                    className="button secondary staff-email-copy"
+                    type="button"
+                    aria-label={`Copy ${email.displayEmail} to clipboard`}
+                    onClick={() => void copyEmail(email.displayEmail)}
+                  >
+                    {copiedEmail === email.displayEmail ? "Copied" : "Copy"}
+                  </button>
+                  <div className="staff-email-details">
                     <a href={`mailto:${email.displayEmail}`}>
                       {email.displayEmail}
                     </a>
@@ -974,14 +982,6 @@ export function StaffProfilePage() {
                       {email.deliverability.replaceAll("_", " ").toLowerCase()}
                     </span>
                   </div>
-                  <button
-                    className="text-button"
-                    type="button"
-                    aria-label={`Copy ${email.displayEmail} to clipboard`}
-                    onClick={() => void copyEmail(email.displayEmail)}
-                  >
-                    {copiedEmail === email.displayEmail ? "Copied" : "Copy"}
-                  </button>
                 </li>
               ))}
             </ul>
