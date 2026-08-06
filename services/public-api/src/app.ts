@@ -17,11 +17,15 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import {
   AiMalformedInterviewResponseError,
+  AiMalformedProfileDraftResponseError,
   AiSafetyInterventionError,
   BedrockAiAdapter,
   FakeAiAdapter,
+  PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+  PRIVATE_HEALTH_OMITTED_TRANSCRIPT_MESSAGE,
   PROMPT_VERSIONS,
   detectHighRiskInput,
+  detectPrivateHealthInput,
   loadPromptBundle,
   validateProposedProfile,
   type AiAdapter,
@@ -662,7 +666,8 @@ export async function buildApp(
     const status =
       error instanceof AiSafetyInterventionError
         ? 422
-        : error instanceof AiMalformedInterviewResponseError
+        : error instanceof AiMalformedInterviewResponseError ||
+            error instanceof AiMalformedProfileDraftResponseError
           ? 502
           : error instanceof z.ZodError
             ? 400
@@ -673,7 +678,8 @@ export async function buildApp(
     void reply.status(status).send({
       error:
         error instanceof AiSafetyInterventionError ||
-        error instanceof AiMalformedInterviewResponseError
+        error instanceof AiMalformedInterviewResponseError ||
+        error instanceof AiMalformedProfileDraftResponseError
           ? error.message
           : status === 400
             ? "The request was not valid."
@@ -1075,6 +1081,53 @@ export async function buildApp(
         const highRiskInput = detectHighRiskInput(body.response);
         if (highRiskInput)
           return reply.status(422).send({ error: highRiskInput.message });
+        const privateHealthInput = detectPrivateHealthInput(body.response);
+        if (privateHealthInput) {
+          const messages = [
+            ...pending.messages,
+            {
+              role: "user" as const,
+              content: PRIVATE_HEALTH_OMITTED_TRANSCRIPT_MESSAGE,
+            },
+            {
+              role: "assistant" as const,
+              content: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+            },
+          ];
+          const revision = await repository.updatePendingInterview({
+            personId: session.personId,
+            expectedRevision: pending.revision,
+            messages,
+            completenessConfidence: pending.completenessConfidence,
+            followUpNotes: pending.followUpNotes,
+            conversationMemory: pending.conversationMemory,
+            ...(pending.proposedProfile === null
+              ? {}
+              : { proposedProfile: null }),
+            now: current,
+          });
+          if (revision === null)
+            return reply.status(409).send({
+              error:
+                "This interview changed in another tab. Reload the page to continue with the latest version.",
+            });
+          emitMetric(
+            "PrivateHealthInputsOmitted",
+            1,
+            "Count",
+            "InterviewDecision",
+          );
+          return {
+            saved: false,
+            deletionRequested: false,
+            message: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+            revision,
+            proposedProfile: null,
+            completenessConfidence: pending.completenessConfidence,
+            expiresAt: pending.expiresAt,
+            promptVersion: PROMPT_VERSIONS.interviewer,
+          };
+        }
         const messages = [
           ...pending.messages,
           { role: "user" as const, content: body.response },
@@ -2001,7 +2054,7 @@ export async function buildApp(
           generated = null;
         }
         const results = generated
-          ? generated.map((item) => {
+          ? generated.flatMap((item) => {
               const candidate = byId.get(item.candidate_id);
               const deterministic = candidate
                 ? deterministicSearchExplanation({
@@ -2013,27 +2066,31 @@ export async function buildApp(
                     fuzzyRank: candidate.fuzzyRank,
                   })
                 : null;
-              return {
-                personId: item.candidate_id,
-                approvedText: candidate?.approvedText ?? "",
-                relevance: deterministic
-                  ? relevanceWithProfileLimitations(
-                      item.relevance,
-                      deterministic,
-                    )
-                  : item.relevance,
-                reason: item.reason,
-                evidence: item.evidence,
-                cautions: [
-                  ...new Set([
-                    ...item.cautions,
-                    ...(deterministic?.cautions ?? []),
-                  ]),
-                ],
-                explanationGeneratedByAi: true,
-              };
+              return deterministic?.hasRelevantExclusion
+                ? []
+                : [
+                    {
+                      personId: item.candidate_id,
+                      approvedText: candidate?.approvedText ?? "",
+                      relevance: deterministic
+                        ? relevanceWithProfileLimitations(
+                            item.relevance,
+                            deterministic,
+                          )
+                        : item.relevance,
+                      reason: item.reason,
+                      evidence: item.evidence,
+                      cautions: [
+                        ...new Set([
+                          ...item.cautions,
+                          ...(deterministic?.cautions ?? []),
+                        ]),
+                      ],
+                      explanationGeneratedByAi: true,
+                    },
+                  ];
             })
-          : ordered.map((candidate) => {
+          : ordered.flatMap((candidate) => {
               const explanation = deterministicSearchExplanation({
                 query: body.query,
                 exactTerms: plan.exact_terms,
@@ -2042,17 +2099,21 @@ export async function buildApp(
                 vectorRank: candidate.vectorRank,
                 fuzzyRank: candidate.fuzzyRank,
               });
-              return {
-                personId: candidate.id,
-                approvedText: candidate.approvedText,
-                relevance: explanation.relevance,
-                reason: explanation.reason,
-                evidence: explanation.evidence,
-                cautions: [
-                  ...new Set([...plan.cautions, ...explanation.cautions]),
-                ],
-                explanationGeneratedByAi: false,
-              };
+              return explanation.hasRelevantExclusion
+                ? []
+                : [
+                    {
+                      personId: candidate.id,
+                      approvedText: candidate.approvedText,
+                      relevance: explanation.relevance,
+                      reason: explanation.reason,
+                      evidence: explanation.evidence,
+                      cautions: [
+                        ...new Set([...plan.cautions, ...explanation.cautions]),
+                      ],
+                      explanationGeneratedByAi: false,
+                    },
+                  ];
             });
         const auditId = await repository.writeAudit({
           actorType: "STAFF",

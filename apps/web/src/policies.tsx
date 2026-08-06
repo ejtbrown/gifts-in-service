@@ -179,6 +179,12 @@ export function AiUseContent({
         closed.
       </p>
       <p>
+        If the service recognizes a health disclosure, it does not keep that
+        response. It keeps only a generic marker that the turn was omitted and
+        asks you to restate a non-sensitive, functional boundary for the
+        affected volunteer activity.
+      </p>
+      <p>
         Anyone who can use a verified email address associated with the profile
         can reach the saved unfinished conversation. If the address is a shared
         mailbox, anyone with access to that mailbox may be able to open it.

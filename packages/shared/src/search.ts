@@ -97,7 +97,10 @@ const SEARCH_STOP_WORDS = new Set([
 ]);
 
 const RELEVANT_LIMITATION =
-  /\b(?:advice only|beginner|developing|learning|limited|not especially|not very|some exposure|still learning|unverified)\b/iu;
+  /\b(?:advice only|beginner|before considering|developing|discuss (?:the )?(?:activity|role)'?s? (?:objective )?requirements|learning|limited|not especially|not very|some exposure|still learning|unverified)\b/iu;
+
+const RELEVANT_EXCLUSION =
+  /\b(?:(?:do(?:es)? not|don['’]t|doesn['’]t) want to be considered for|not available for|not willing to (?:do|provide|serve in)|should not be considered for)\b/iu;
 
 function stem(token: string): string {
   if (token.endsWith("ies") && token.length > 4)
@@ -150,15 +153,18 @@ export interface DeterministicSearchExplanation {
   evidence: string[];
   cautions: string[];
   hasRelevantLimitation: boolean;
+  hasRelevantExclusion: boolean;
 }
 
 export function relevanceWithProfileLimitations(
   relevance: GroundedResult["relevance"],
   explanation: DeterministicSearchExplanation,
 ): GroundedResult["relevance"] {
-  return relevance === "HIGH" && explanation.hasRelevantLimitation
-    ? "MEDIUM"
-    : relevance;
+  return explanation.hasRelevantExclusion
+    ? "LOW"
+    : relevance === "HIGH" && explanation.hasRelevantLimitation
+      ? "MEDIUM"
+      : relevance;
 }
 
 export function deterministicSearchExplanation(
@@ -229,6 +235,9 @@ export function deterministicSearchExplanation(
   const hasRelevantLimitation = positiveEvidence.some((item) =>
     RELEVANT_LIMITATION.test(item.sentence),
   );
+  const hasRelevantExclusion = positiveEvidence.some((item) =>
+    RELEVANT_EXCLUSION.test(item.sentence),
+  );
   const retrievalMethodCount = [
     input.lexicalRank,
     input.vectorRank,
@@ -248,7 +257,8 @@ export function deterministicSearchExplanation(
         ? "HIGH"
         : "MEDIUM";
   }
-  if (hasRelevantLimitation && relevance === "HIGH") relevance = "MEDIUM";
+  if (hasRelevantExclusion) relevance = "LOW";
+  else if (hasRelevantLimitation && relevance === "HIGH") relevance = "MEDIUM";
 
   let reason: string;
   if (directlyMatched.length > 0) {
@@ -266,7 +276,10 @@ export function deterministicSearchExplanation(
     reason =
       "Semantic retrieval selected this as a possible adjacent profile, but deterministic checks found no direct support for the requested terms.";
   }
-  if (hasRelevantLimitation)
+  if (hasRelevantExclusion)
+    reason +=
+      " The relevant evidence says the member does not want to be considered for this activity, so the profile is not a match.";
+  else if (hasRelevantLimitation)
     reason +=
       " The relevant evidence also states a limitation or developing skill, which lowers the match grade.";
 
@@ -274,11 +287,16 @@ export function deterministicSearchExplanation(
     relevance,
     reason,
     evidence,
-    cautions: hasRelevantLimitation
+    cautions: hasRelevantExclusion
       ? [
-          "The relevant profile text describes a limitation or developing skill; confirm current proficiency and suitability.",
+          "The member ruled out this activity; do not treat this result as a possible placement.",
         ]
-      : [],
+      : hasRelevantLimitation
+        ? [
+            "The relevant profile text describes a limitation or developing skill; confirm current proficiency and suitability.",
+          ]
+        : [],
     hasRelevantLimitation,
+    hasRelevantExclusion,
   };
 }

@@ -110,6 +110,42 @@ describe("grounded hybrid search", () => {
     });
   });
 
+  it("never presents a member as a match for an activity they ruled out", () => {
+    const excluded = deterministicSearchExplanation({
+      query: "infant care volunteer",
+      exactTerms: ["infant care"],
+      approvedText:
+        "They do not want to be considered for infant care. They can organize occasional community events.",
+      lexicalRank: 1,
+      vectorRank: 1,
+      fuzzyRank: null,
+    });
+    expect(excluded).toMatchObject({
+      relevance: "LOW",
+      hasRelevantExclusion: true,
+    });
+    expect(relevanceWithProfileLimitations("HIGH", excluded)).toBe("LOW");
+    expect(excluded.reason).toContain("not a match");
+    expect(excluded.cautions).toContain(
+      "The member ruled out this activity; do not treat this result as a possible placement.",
+    );
+
+    const discussFirst = deterministicSearchExplanation({
+      query: "infant care volunteer",
+      exactTerms: ["infant care"],
+      approvedText:
+        "Before considering them for infant care, staff should discuss the activity's objective requirements and fit with the member.",
+      lexicalRank: 1,
+      vectorRank: 1,
+      fuzzyRank: null,
+    });
+    expect(discussFirst).toMatchObject({
+      relevance: "MEDIUM",
+      hasRelevantLimitation: true,
+      hasRelevantExclusion: false,
+    });
+  });
+
   it("bounds reranked search results to the top ten candidates", () => {
     const result = (index: number) => ({
       candidate_id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,

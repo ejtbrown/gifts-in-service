@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deterministicSearchExplanation } from "@gis/shared";
 import type {
   InterviewCompleteness,
   InterviewConversationMemory,
@@ -6,7 +7,14 @@ import type {
   RerankerOutput,
   SearchPlan,
 } from "@gis/shared";
-import { detectHighRiskInput } from "./safety.js";
+import {
+  PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+  OMITTED_PROFILE_SOURCE_MESSAGE,
+  detectHighRiskInput,
+  detectPrivateHealthInput,
+  sanitizeApprovedProfileSource,
+  sanitizeProfileDraftMessages,
+} from "./safety.js";
 import type {
   AiAdapter,
   InterviewContext,
@@ -69,7 +77,11 @@ function refreshedConversationMemory(
     ...new Set([
       ...previous.establishedFacts,
       ...userMessages(messages)
-        .filter((message) => detectHighRiskInput(message) === null)
+        .filter(
+          (message) =>
+            detectHighRiskInput(message) === null &&
+            detectPrivateHealthInput(message) === null,
+        )
         .map((message) => message.trim().replace(/\s+/gu, " ").slice(0, 240))
         .filter(
           (message) =>
@@ -304,6 +316,16 @@ export class FakeAiAdapter implements AiAdapter {
         follow_up_notes: context.previousFollowUpNotes,
         conversation_memory: context.previousConversationMemory,
       });
+    if (detectPrivateHealthInput(latest))
+      return Promise.resolve({
+        action: "CONTINUE",
+        message: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+        referenced_profile_text: null,
+        invalidate_proposed_profile: context.hasProposedProfile,
+        completeness_confidence: context.previousCompletenessConfidence,
+        follow_up_notes: context.previousFollowUpNotes,
+        conversation_memory: context.previousConversationMemory,
+      });
     if (PROFILE_DELETION_REQUEST.test(latest))
       return Promise.resolve({
         action: "REQUEST_PROFILE_DELETION",
@@ -381,12 +403,16 @@ export class FakeAiAdapter implements AiAdapter {
     messages: readonly InterviewMessage[],
     currentProfile?: string,
   ): Promise<ProfileDraft> {
-    const facts = userMessages(messages)
+    const facts = userMessages(sanitizeProfileDraftMessages(messages))
+      .filter((message) => message !== OMITTED_PROFILE_SOURCE_MESSAGE)
       .filter((message) => detectHighRiskInput(message) === null)
       .map((message) => message.trim().replace(/\s+/g, " "))
       .filter((message) => message.length > 8);
-    const base = currentProfile
-      ? `Their current approved profile says: ${currentProfile}`
+    const safeCurrentProfile = currentProfile
+      ? sanitizeApprovedProfileSource(currentProfile)
+      : null;
+    const base = safeCurrentProfile
+      ? `Their current approved profile says: ${safeCurrentProfile}`
       : "";
     const supplied = facts.join(" ");
     const text = [
@@ -459,6 +485,22 @@ export class FakeAiAdapter implements AiAdapter {
         )
         .slice(0, 2);
       const hits = terms.filter((term) => lower.includes(term)).length;
+      const deterministic = deterministicSearchExplanation({
+        query,
+        exactTerms: plan.exact_terms,
+        approvedText: candidate.approvedText,
+        lexicalRank: hits > 0 ? 1 : null,
+        vectorRank: 1,
+        fuzzyRank: null,
+      });
+      if (deterministic.hasRelevantExclusion)
+        return {
+          candidate_id: candidate.id,
+          relevance: "LOW" as const,
+          reason: deterministic.reason,
+          evidence: deterministic.evidence,
+          cautions: deterministic.cautions,
+        };
       return {
         candidate_id: candidate.id,
         relevance:

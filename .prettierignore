@@ -3,6 +3,7 @@ coverage
 .terraform
 playwright-report
 test-results
+.obsidian
 pnpm-lock.yaml
 *.tfvars
 gifts-in-service-codex-prompt.md
