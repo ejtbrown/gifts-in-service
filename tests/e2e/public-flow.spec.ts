@@ -1,8 +1,9 @@
+import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { SENSITIVE_INFORMATION_REJECTION_MESSAGE } from "../../packages/ai/src/index.js";
 
 const PROFILE_SAVED_NOTICE =
-  "Your profile has been saved. No further action is necessary unless you want to make changes.";
+  "Your profile has been saved. You're all done, and you can close this browser tab now.";
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
@@ -193,9 +194,24 @@ test("fictional member resumes a pending interview through a new link, approves 
   await expect(
     page.getByRole("heading", { name: "Complete Browser Fiction" }),
   ).toBeVisible();
+  const completionDialog = page.getByRole("dialog", {
+    name: "You're all done!",
+  });
+  await expect(completionDialog).toBeVisible();
   await expect(
-    page.getByText(PROFILE_SAVED_NOTICE, { exact: true }),
+    completionDialog.getByText(PROFILE_SAVED_NOTICE, { exact: true }),
   ).toBeVisible();
+  await expect(
+    completionDialog.getByRole("button", { name: "Edit my profile" }),
+  ).toBeFocused();
+  const completionAccessibility = await new AxeBuilder({ page })
+    .include(".profile-completion-dialog")
+    .analyze();
+  expect(
+    completionAccessibility.violations.filter((violation) =>
+      ["serious", "critical"].includes(violation.impact ?? ""),
+    ),
+  ).toEqual([]);
   await expect(page.getByText(exactDraft, { exact: true })).toBeVisible();
   expect(
     await page.evaluate(() => ({
@@ -203,7 +219,9 @@ test("fictional member resumes a pending interview through a new link, approves 
       session: sessionStorage.length,
     })),
   ).toEqual({ local: 0, session: 0 });
-  await page.getByRole("button", { name: "Let Me Update This" }).click();
+  await completionDialog
+    .getByRole("button", { name: "Edit my profile" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Update your profile" }),
   ).toBeVisible();
@@ -262,8 +280,14 @@ test("fictional member resumes a pending interview through a new link, approves 
     page.getByRole("heading", { name: "Complete Browser Fiction" }),
   ).toBeVisible();
   await expect(
-    page.getByText(PROFILE_SAVED_NOTICE, { exact: true }),
+    page
+      .getByRole("dialog", { name: "You're all done!" })
+      .getByText(PROFILE_SAVED_NOTICE, { exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("dialog", { name: "You're all done!" })
+    .getByRole("button", { name: "View my saved profile" })
+    .click();
   await expect(
     page
       .locator(".profile-prose")
