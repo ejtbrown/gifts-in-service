@@ -12,7 +12,7 @@ import { AiUseContent, PrivacyNoticeContent } from "./policies.js";
 import type { MemberSessionResponse } from "./types.js";
 
 const PROFILE_SAVED_NOTICE =
-  "Your profile has been saved. No further action is necessary unless you want to make changes.";
+  "Your profile has been saved. You're all done, and you can close this browser tab now.";
 const PROFILE_SAVED_NAVIGATION_STATE = { profileSaved: true } as const;
 
 function profileWasJustSaved(state: unknown): boolean {
@@ -498,13 +498,26 @@ export function MemberPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const savedOnArrival = profileWasJustSaved(location.state);
-  const [showProfileSavedNotice] = useState(savedOnArrival);
+  const [showProfileSavedNotice, setShowProfileSavedNotice] =
+    useState(savedOnArrival);
   const [message, setMessage] = useState("");
+  const profileSavedDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (savedOnArrival) {
       void navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.pathname, navigate, savedOnArrival]);
+  useEffect(() => {
+    const dialog = profileSavedDialog.current;
+    if (
+      showProfileSavedNotice &&
+      data?.person?.approvedText &&
+      dialog &&
+      !dialog.open
+    ) {
+      dialog.showModal();
+    }
+  }, [data?.person?.approvedText, showProfileSavedNotice]);
   if (error)
     return (
       <div className="narrow">
@@ -558,9 +571,42 @@ export function MemberPage() {
         </span>
       </div>
       {showProfileSavedNotice && (
-        <Notice tone="success">
-          <p>{PROFILE_SAVED_NOTICE}</p>
-        </Notice>
+        <dialog
+          className="profile-completion-dialog"
+          ref={profileSavedDialog}
+          aria-labelledby="profile-completion-title"
+          aria-describedby="profile-completion-message"
+          onClose={() => setShowProfileSavedNotice(false)}
+        >
+          <div className="profile-completion-mark" aria-hidden="true">
+            ✓
+          </div>
+          <p className="eyebrow">Profile saved</p>
+          <h2 id="profile-completion-title">You're all done!</h2>
+          <p id="profile-completion-message" className="completion-message">
+            {PROFILE_SAVED_NOTICE}
+          </p>
+          <div className="profile-completion-actions">
+            <button
+              className="button primary large"
+              autoFocus
+              onClick={() => {
+                profileSavedDialog.current?.close();
+                void navigate("/member/interview", {
+                  state: { currentProfile: person.approvedText },
+                });
+              }}
+            >
+              Edit my profile
+            </button>
+            <button
+              className="button secondary large"
+              onClick={() => profileSavedDialog.current?.close()}
+            >
+              View my saved profile
+            </button>
+          </div>
+        </dialog>
       )}
       {message && (
         <Notice>
