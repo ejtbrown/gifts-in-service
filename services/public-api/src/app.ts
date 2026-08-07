@@ -24,10 +24,18 @@ import {
   PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
   PRIVATE_HEALTH_OMITTED_TRANSCRIPT_MESSAGE,
   PROMPT_VERSIONS,
+  applyRequiredRoleSafetyStatements,
+  deriveRoleSafetyConcerns,
   detectHighRiskInput,
   detectPrivateHealthInput,
+  detectRoleSafetyConcerns,
   loadPromptBundle,
+  mergeRoleSafetyConcerns,
+  roleSafetyConcernAcknowledgement,
+  sanitizePendingHealthMessages,
+  sanitizeProfileDraftMessages,
   validateProposedProfile,
+  validateRequiredRoleSafetyStatements,
   type AiAdapter,
 } from "@gis/ai";
 import {
@@ -53,6 +61,7 @@ import {
   DataApiExecutor,
   PostgresExecutor,
   Repository,
+  type PendingInterview,
   type SqlExecutor,
 } from "@gis/db";
 import {
@@ -834,6 +843,113 @@ export async function buildApp(
     return saved;
   }
 
+  function effectiveRoleSafetyConcerns(
+    pending: PendingInterview,
+    currentProfile: string | null,
+  ) {
+    return mergeRoleSafetyConcerns(
+      pending.roleSafetyConcerns,
+      deriveRoleSafetyConcerns(pending.messages, currentProfile),
+    );
+  }
+
+  function exactProfileSafetyFinding(
+    text: string,
+    pending: PendingInterview,
+    currentProfile: string | null,
+  ) {
+    return (
+      validateProposedProfile(text) ??
+      validateRequiredRoleSafetyStatements(
+        text,
+        effectiveRoleSafetyConcerns(pending, currentProfile),
+      )
+    );
+  }
+
+  async function reconcileRoleSafetyConcerns(
+    personId: string,
+    pending: PendingInterview,
+    currentProfile: string | null,
+    current: Date,
+  ): Promise<PendingInterview> {
+    const concerns = effectiveRoleSafetyConcerns(pending, currentProfile);
+    const messages = sanitizePendingHealthMessages(pending.messages);
+    const followUpNotes = pending.followUpNotes.filter(
+      (note) => validateProposedProfile(note) === null,
+    );
+    const conversationMemory = {
+      establishedFacts: pending.conversationMemory.establishedFacts.filter(
+        (fact) => validateProposedProfile(fact) === null,
+      ),
+      closedTopics: pending.conversationMemory.closedTopics.filter(
+        (topic) => validateProposedProfile(topic) === null,
+      ),
+    };
+    const proposalMustBeInvalidated =
+      pending.proposedProfile !== null &&
+      (concerns.length > pending.roleSafetyConcerns.length ||
+        validateProposedProfile(pending.proposedProfile) !== null ||
+        validateRequiredRoleSafetyStatements(
+          pending.proposedProfile,
+          concerns,
+        ) !== null);
+    const reconciledMessages =
+      proposalMustBeInvalidated && pending.proposedProfile
+        ? messages.map((message) =>
+            message.role === "assistant" &&
+            message.content.includes(pending.proposedProfile!)
+              ? {
+                  ...message,
+                  content:
+                    "The previous proposed profile was withdrawn because it requires a privacy or role-safety revision. Please create a new proposal before submitting.",
+                }
+              : message,
+          )
+        : messages;
+    const changed =
+      concerns.length !== pending.roleSafetyConcerns.length ||
+      reconciledMessages.some(
+        (message, index) =>
+          message.content !== pending.messages[index]?.content,
+      ) ||
+      followUpNotes.length !== pending.followUpNotes.length ||
+      conversationMemory.establishedFacts.length !==
+        pending.conversationMemory.establishedFacts.length ||
+      conversationMemory.closedTopics.length !==
+        pending.conversationMemory.closedTopics.length ||
+      proposalMustBeInvalidated;
+    if (!changed) return pending;
+    const revision = await repository.updatePendingInterview({
+      personId,
+      expectedRevision: pending.revision,
+      messages: reconciledMessages,
+      completenessConfidence: pending.completenessConfidence,
+      followUpNotes,
+      conversationMemory,
+      roleSafetyConcerns: concerns,
+      ...(proposalMustBeInvalidated ? { proposedProfile: null } : {}),
+      now: current,
+    });
+    if (revision === null) {
+      const refreshed = await repository.getPendingInterview(personId, current);
+      if (!refreshed) throw new Error("PendingInterviewSafetyReconcileFailed");
+      return refreshed;
+    }
+    return {
+      ...pending,
+      messages: reconciledMessages,
+      proposedProfile: proposalMustBeInvalidated
+        ? null
+        : pending.proposedProfile,
+      followUpNotes,
+      conversationMemory,
+      roleSafetyConcerns: concerns,
+      revision,
+      updatedAt: current,
+    };
+  }
+
   if (process.env.GIS_API_SURFACE !== "staff") {
     app.get("/api/config", async (_request, reply) => {
       setNoStore(reply);
@@ -1036,14 +1152,24 @@ export async function buildApp(
       const person = await repository.getPerson(session.personId);
       if (!person)
         return reply.status(404).send({ error: "The profile was not found." });
-      const pending = await repository.startPendingInterview({
+      const started = await repository.startPendingInterview({
         personId: session.personId,
         openingMessage: person.approvedText
           ? UPDATE_PROFILE_OPENING
           : NEW_PROFILE_OPENING,
         initialCompletenessConfidence: person.approvedText ? "MODERATE" : "LOW",
+        initialRoleSafetyConcerns: deriveRoleSafetyConcerns(
+          [],
+          person.approvedText,
+        ),
         now: now(),
       });
+      const pending = await reconcileRoleSafetyConcerns(
+        session.personId,
+        started,
+        person.approvedText,
+        now(),
+      );
       return {
         messages: pending.messages,
         proposedProfile: pending.proposedProfile,
@@ -1081,8 +1207,27 @@ export async function buildApp(
         const highRiskInput = detectHighRiskInput(body.response);
         if (highRiskInput)
           return reply.status(422).send({ error: highRiskInput.message });
+        const person = await repository.getPerson(session.personId);
+        const priorRoleSafetyConcerns = effectiveRoleSafetyConcerns(
+          pending,
+          person?.approvedText ?? null,
+        );
+        const detectedRoleSafetyConcerns = detectRoleSafetyConcerns(
+          body.response,
+        );
+        const roleSafetyConcerns = mergeRoleSafetyConcerns(
+          priorRoleSafetyConcerns,
+          detectedRoleSafetyConcerns,
+        );
         const privateHealthInput = detectPrivateHealthInput(body.response);
         if (privateHealthInput) {
+          const responseMessage =
+            detectedRoleSafetyConcerns.length > 0
+              ? roleSafetyConcernAcknowledgement(
+                  detectedRoleSafetyConcerns,
+                  true,
+                )
+              : PRIVATE_HEALTH_FOLLOW_UP_MESSAGE;
           const messages = [
             ...pending.messages,
             {
@@ -1091,7 +1236,7 @@ export async function buildApp(
             },
             {
               role: "assistant" as const,
-              content: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+              content: responseMessage,
             },
           ];
           const revision = await repository.updatePendingInterview({
@@ -1101,6 +1246,7 @@ export async function buildApp(
             completenessConfidence: pending.completenessConfidence,
             followUpNotes: pending.followUpNotes,
             conversationMemory: pending.conversationMemory,
+            roleSafetyConcerns,
             ...(pending.proposedProfile === null
               ? {}
               : { proposedProfile: null }),
@@ -1120,7 +1266,51 @@ export async function buildApp(
           return {
             saved: false,
             deletionRequested: false,
-            message: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+            message: responseMessage,
+            revision,
+            proposedProfile: null,
+            completenessConfidence: pending.completenessConfidence,
+            expiresAt: pending.expiresAt,
+            promptVersion: PROMPT_VERSIONS.interviewer,
+          };
+        }
+        if (detectedRoleSafetyConcerns.length > 0) {
+          const responseMessage = roleSafetyConcernAcknowledgement(
+            detectedRoleSafetyConcerns,
+          );
+          const messages = [
+            ...pending.messages,
+            { role: "user" as const, content: body.response },
+            { role: "assistant" as const, content: responseMessage },
+          ];
+          const revision = await repository.updatePendingInterview({
+            personId: session.personId,
+            expectedRevision: pending.revision,
+            messages,
+            completenessConfidence: pending.completenessConfidence,
+            followUpNotes: pending.followUpNotes,
+            conversationMemory: pending.conversationMemory,
+            roleSafetyConcerns,
+            ...(pending.proposedProfile === null
+              ? {}
+              : { proposedProfile: null }),
+            now: current,
+          });
+          if (revision === null)
+            return reply.status(409).send({
+              error:
+                "This interview changed in another tab. Reload the page to continue with the latest version.",
+            });
+          emitMetric(
+            "RoleSafetyConcernsPreserved",
+            1,
+            "Count",
+            "InterviewDecision",
+          );
+          return {
+            saved: false,
+            deletionRequested: false,
+            message: responseMessage,
             revision,
             proposedProfile: null,
             completenessConfidence: pending.completenessConfidence,
@@ -1132,14 +1322,16 @@ export async function buildApp(
           ...pending.messages,
           { role: "user" as const, content: body.response },
         ];
-        const person = await repository.getPerson(session.personId);
-        const turn = await ai.interview(messages, {
-          hasProposedProfile: pending.proposedProfile !== null,
-          previousCompletenessConfidence: pending.completenessConfidence,
-          previousFollowUpNotes: pending.followUpNotes,
-          previousConversationMemory: pending.conversationMemory,
-          currentProfile: person?.approvedText ?? null,
-        });
+        const turn = await ai.interview(
+          sanitizeProfileDraftMessages(messages),
+          {
+            hasProposedProfile: pending.proposedProfile !== null,
+            previousCompletenessConfidence: pending.completenessConfidence,
+            previousFollowUpNotes: pending.followUpNotes,
+            previousConversationMemory: pending.conversationMemory,
+            currentProfile: person?.approvedText ?? null,
+          },
+        );
         const completenessConfidence =
           turn.follow_up_notes.length > 0
             ? "LOW"
@@ -1149,7 +1341,11 @@ export async function buildApp(
             pending.proposedProfile ??
             exactLegacyProposal(messages, turn.referenced_profile_text);
           if (exactProfile) {
-            const safety = validateProposedProfile(exactProfile);
+            const safety = exactProfileSafetyFinding(
+              exactProfile,
+              pending,
+              person?.approvedText ?? null,
+            );
             if (safety)
               return reply
                 .status(422)
@@ -1188,12 +1384,21 @@ export async function buildApp(
             messages,
             person?.approvedText ?? undefined,
           );
-          const safety = validateProposedProfile(draft.profile_text);
+          const exactDraft = applyRequiredRoleSafetyStatements(
+            draft.profile_text,
+            roleSafetyConcerns,
+          );
+          const safety =
+            validateProposedProfile(exactDraft) ??
+            validateRequiredRoleSafetyStatements(
+              exactDraft,
+              roleSafetyConcerns,
+            );
           if (safety)
             return reply
               .status(422)
               .send({ error: safety.message, requiresRevision: true });
-          proposedProfile = draft.profile_text;
+          proposedProfile = exactDraft;
           message = proposedProfileMessage(proposedProfile);
         }
         const revision = await repository.updatePendingInterview({
@@ -1206,6 +1411,7 @@ export async function buildApp(
           completenessConfidence,
           followUpNotes: turn.follow_up_notes,
           conversationMemory: turn.conversation_memory,
+          roleSafetyConcerns,
           ...(proposedProfile !== pending.proposedProfile
             ? { proposedProfile }
             : {}),
@@ -1248,7 +1454,12 @@ export async function buildApp(
           error:
             "The proposed profile is expired or changed in another tab. Reload the conversation before submitting.",
         });
-      const safety = validateProposedProfile(pending.proposedProfile);
+      const person = await repository.getPerson(session.personId);
+      const safety = exactProfileSafetyFinding(
+        pending.proposedProfile,
+        pending,
+        person?.approvedText ?? null,
+      );
       if (safety)
         return reply
           .status(422)
@@ -1291,7 +1502,17 @@ export async function buildApp(
         pending.messages,
         person?.approvedText ?? undefined,
       );
-      const safety = validateProposedProfile(draft.profile_text);
+      const roleSafetyConcerns = effectiveRoleSafetyConcerns(
+        pending,
+        person?.approvedText ?? null,
+      );
+      const exactDraft = applyRequiredRoleSafetyStatements(
+        draft.profile_text,
+        roleSafetyConcerns,
+      );
+      const safety =
+        validateProposedProfile(exactDraft) ??
+        validateRequiredRoleSafetyStatements(exactDraft, roleSafetyConcerns);
       if (safety)
         return reply
           .status(422)
@@ -1301,13 +1522,14 @@ export async function buildApp(
         tokenHash: approval.hash,
         personId: session.personId,
         sessionHash: session.sessionHash,
-        approvedTextSha256: sha256(draft.profile_text),
+        approvedTextSha256: sha256(exactDraft),
         consentVersion: CONSENT_VERSION,
         promptVersion: PROMPT_VERSIONS.profileDrafter,
         expiresAt: new Date(now().getTime() + 15 * 60 * 1000),
       });
       return {
         ...draft,
+        profile_text: exactDraft,
         approvalToken: approval.raw,
         consentVersion: CONSENT_VERSION,
         promptVersion: PROMPT_VERSIONS.profileDrafter,
@@ -1320,7 +1542,21 @@ export async function buildApp(
       if (!session?.personId) return;
       const body = profileApprovalSchema.parse(request.body);
       const textHash = sha256(body.profileText);
-      const safety = validateProposedProfile(body.profileText);
+      const current = now();
+      const [pending, person] = await Promise.all([
+        repository.getPendingInterview(session.personId, current),
+        repository.getPerson(session.personId),
+      ]);
+      if (!pending)
+        return reply.status(409).send({
+          error:
+            "The pending interview has expired. Please restart the interview and create a new draft.",
+        });
+      const safety = exactProfileSafetyFinding(
+        body.profileText,
+        pending,
+        person?.approvedText ?? null,
+      );
       if (safety)
         return reply
           .status(422)
@@ -1336,19 +1572,25 @@ export async function buildApp(
         approvedTextSha256: textHash,
         consentVersion: body.consentVersion,
         promptVersion: PROMPT_VERSIONS.profileDrafter,
-        now: now(),
+        now: current,
       });
       if (!consumed)
         return reply.status(409).send({
           error:
             "The approval has expired or the displayed profile changed. Please create a new draft.",
         });
-      await saveExactProfile({
+      const saved = await saveExactProfile({
         session,
         exactText: body.profileText,
-        current: now(),
+        current,
         embedding,
+        expectedPendingRevision: pending.revision,
       });
+      if (!saved)
+        return reply.status(409).send({
+          error:
+            "The conversation changed before approval. Please create and approve a new draft.",
+        });
       return { saved: true, approvedTextSha256: textHash };
     });
 

@@ -242,6 +242,12 @@ describe("sanitized logging", () => {
     expect(
       containsForbiddenLogField({ conversation_memory: { closedTopics: [] } }),
     ).toBe(true);
+    expect(
+      containsForbiddenLogField({ roleSafetyConcerns: ["INFANT_CARE"] }),
+    ).toBe(true);
+    expect(
+      containsForbiddenLogField({ role_safety_concerns: ["INFANT_CARE"] }),
+    ).toBe(true);
   });
 
   it("drops bodies, queries, tokens, email, and raw IP fields", () => {

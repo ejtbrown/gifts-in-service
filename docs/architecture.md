@@ -87,6 +87,7 @@ erDiagram
     text completeness_confidence
     jsonb follow_up_notes
     jsonb conversation_memory
+    jsonb role_safety_concerns
     integer revision
     timestamptz started_at
     timestamptz expires_at

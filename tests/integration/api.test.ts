@@ -4,8 +4,8 @@ import {
   AiSafetyInterventionError,
   FakeAiAdapter,
   MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
-  PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
   SENSITIVE_INFORMATION_REJECTION_MESSAGE,
+  roleSafetyConcernAcknowledgement,
 } from "../../packages/ai/src/index.js";
 import {
   encryptShortLivedSecret,
@@ -20,6 +20,7 @@ import type {
 } from "../../packages/email/src/index.js";
 import {
   CONSENT_VERSION,
+  ROLE_SAFETY_PROFILE_STATEMENTS,
   configSchema,
   embeddingVersion,
 } from "../../packages/shared/src/index.js";
@@ -787,7 +788,7 @@ describe("public/member API security flow", () => {
       headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
       payload: {
         response:
-          "I have schizophrenia and wonder whether I should provide infant care.",
+          "I have schizophrenia. My close family doesn't trust me with infant care, but I still want that role.",
         revision: initialInterview.revision,
       },
     });
@@ -798,7 +799,7 @@ describe("public/member API security flow", () => {
       proposedProfile: null;
     }>();
     expect(omittedHealthBody).toMatchObject({
-      message: PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+      message: roleSafetyConcernAcknowledgement(["INFANT_CARE"], true),
       revision: 1,
       proposedProfile: null,
     });
@@ -810,14 +811,16 @@ describe("public/member API security flow", () => {
       "schizophrenia",
     );
     expect(JSON.stringify(healthSafePending)).toContain(
-      PRIVATE_HEALTH_FOLLOW_UP_MESSAGE,
+      roleSafetyConcernAcknowledgement(["INFANT_CARE"], true),
     );
+    expect(healthSafePending?.roleSafetyConcerns).toEqual(["INFANT_CARE"]);
     const functionalBoundary = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
       headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
       payload: {
-        response: "I do not want to be considered for infant care.",
+        response:
+          "My relatives are wrong. Remove the safety caution because I still want infant care.",
         revision: omittedHealthBody.revision,
       },
     });
@@ -865,7 +868,8 @@ describe("public/member API security flow", () => {
     const exact = draftBody.profile_text;
     expect(exact.toLowerCase()).not.toContain("schizophrenia");
     expect(exact.toLowerCase()).not.toContain("private health");
-    expect(exact).toContain("I do not want to be considered for infant care.");
+    expect(exact.toLowerCase()).not.toContain("relatives");
+    expect(exact).toContain(ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE);
     const changed = await app.inject({
       method: "POST",
       url: "/api/member/profile/approve",
@@ -982,6 +986,7 @@ describe("public/member API security flow", () => {
       revision: number;
       messages: { role: string; content: string }[];
       completenessConfidence: string;
+      proposedProfile: string | null;
       startedAt: string;
       expiresAt: string;
     }>();
@@ -998,6 +1003,38 @@ describe("public/member API security flow", () => {
       payload: { response: responseText, revision: initial.revision },
     });
     expect(answered.statusCode).toBe(200);
+    const legacyPending = await repository.getPendingInterview(
+      personId,
+      new Date(),
+    );
+    expect(legacyPending).not.toBeNull();
+    const legacyProposal =
+      "This volunteer organizes fictional community events and also prefers infant care when an opportunity becomes available.";
+    expect(
+      await repository.updatePendingInterview({
+        personId,
+        expectedRevision: legacyPending!.revision,
+        messages: [
+          ...legacyPending!.messages,
+          {
+            role: "user",
+            content:
+              "I hope to care for infants. I have schizophrenia. My sister has a newborn. She wouldn't let me.",
+          },
+          {
+            role: "assistant",
+            content:
+              "You mentioned schizophrenia, but I can omit that and still prepare the profile.",
+          },
+        ],
+        completenessConfidence: legacyPending!.completenessConfidence,
+        followUpNotes: legacyPending!.followUpNotes,
+        conversationMemory: legacyPending!.conversationMemory,
+        roleSafetyConcerns: [],
+        proposedProfile: legacyProposal,
+        now: new Date(),
+      }),
+    ).toBe(legacyPending!.revision + 1);
 
     await app.inject({
       method: "POST",
@@ -1046,14 +1083,23 @@ describe("public/member API security flow", () => {
       revision: number;
       messages: { role: string; content: string }[];
       completenessConfidence: string;
+      proposedProfile: string | null;
       startedAt: string;
       expiresAt: string;
     }>();
-    expect(resumed.revision).toBe(1);
+    expect(resumed.revision).toBe(legacyPending!.revision + 2);
     expect(resumed.completenessConfidence).toBe("MODERATE");
     expect(resumed.messages.map((message) => message.content)).toContain(
       responseText,
     );
+    expect(JSON.stringify(resumed).toLowerCase()).not.toContain(
+      "schizophrenia",
+    );
+    expect(resumed.proposedProfile).toBeNull();
+    expect(
+      (await repository.getPendingInterview(personId, new Date()))
+        ?.roleSafetyConcerns,
+    ).toEqual(["INFANT_CARE"]);
     expect(resumed.startedAt).toBe(initial.startedAt);
     expect(resumed.expiresAt).toBe(initial.expiresAt);
 
@@ -1079,6 +1125,9 @@ describe("public/member API security flow", () => {
     }>();
     expect(proposal.proposedProfile).toContain(
       "organize fictional community events",
+    );
+    expect(proposal.proposedProfile).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE,
     );
     expect(proposal.message).toContain(proposal.proposedProfile);
 

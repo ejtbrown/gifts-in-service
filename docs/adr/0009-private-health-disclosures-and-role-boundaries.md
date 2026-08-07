@@ -21,6 +21,8 @@ Final wording is neutral. A ruled-out activity says that the member does not wan
 
 Search deterministically classifies a ruled-out activity as `LOW` and omits it from returned staff results even if lexical or vector retrieval found the same activity name. A discuss-first boundary is no higher than `MEDIUM`. Neither path creates a hidden diagnosis, protected-class score, or suitability classification.
 
+ADR 0010 adds a separate control for an explicit, grounded role-safety concern that appears alongside private health information. That control is triggered by the functional safety evidence and named activity, never by the health fact, and retains only a canonical role code until the member approves diagnosis-free caution prose.
+
 ## Consequences
 
 Recognizable health input is not recoverable from the active transcript after interception. The member must restate any non-sensitive volunteering facts that appeared in the same response. The generic pending marker and follow-up have the same authorization, encryption, no-logging, fixed-expiry, and deletion behavior as other pending interview state.

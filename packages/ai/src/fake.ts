@@ -493,7 +493,10 @@ export class FakeAiAdapter implements AiAdapter {
         vectorRank: 1,
         fuzzyRank: null,
       });
-      if (deterministic.hasRelevantExclusion)
+      if (
+        deterministic.hasRelevantExclusion ||
+        deterministic.hasRelevantLimitation
+      )
         return {
           candidate_id: candidate.id,
           relevance: "LOW" as const,
