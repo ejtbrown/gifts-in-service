@@ -554,4 +554,71 @@ describe("Bedrock conversation formatting", () => {
       },
     });
   });
+
+  it("sanitizes health source text and retries an unsafe profile draft internally", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: {
+          message: {
+            content: [
+              {
+                text: JSON.stringify({
+                  profile_text:
+                    "This fictional volunteer has schizophrenia and is interested in infant care projects.",
+                  coverage_notes: "Review the draft.",
+                }),
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        output: {
+          message: {
+            content: [
+              {
+                text: JSON.stringify({
+                  profile_text:
+                    "This fictional volunteer does not want to be considered for infant care and can organize occasional community events.",
+                  coverage_notes: "Review the functional boundary.",
+                }),
+              },
+            ],
+          },
+        },
+      });
+    const adapter = new BedrockAiAdapter(config, { send } as never);
+
+    const draft = await adapter.draft(
+      [
+        {
+          role: "user",
+          content:
+            "I have schizophrenia and wonder whether I should provide infant care.",
+        },
+        {
+          role: "assistant",
+          content: "Please state only a functional volunteering boundary.",
+        },
+        {
+          role: "user",
+          content: "I do not want to be considered for infant care.",
+        },
+      ],
+      "They have schizophrenia. They organize occasional community events.",
+    );
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(send.mock.calls[0]).toLowerCase()).not.toContain(
+      "schizophrenia",
+    );
+    expect(JSON.stringify(send.mock.calls[1])).toContain(
+      "A previous draft was rejected before display",
+    );
+    expect(draft.profile_text).toContain(
+      "does not want to be considered for infant care",
+    );
+    expect(draft.profile_text.toLowerCase()).not.toContain("schizophrenia");
+  });
 });

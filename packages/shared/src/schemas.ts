@@ -54,6 +54,16 @@ export const interviewConversationMemorySchema = z
   })
   .strict();
 
+export const roleSafetyConcernSchema = z.enum([
+  "INFANT_CARE",
+  "CHILD_SUPERVISION",
+  "VULNERABLE_ADULT_CARE",
+  "PASSENGER_TRANSPORT",
+  "FINANCIAL_HANDLING",
+]);
+
+export const roleSafetyConcernsSchema = z.array(roleSafetyConcernSchema).max(5);
+
 export const profileDraftRequestSchema = z.object({
   revision: z.number().int().min(0),
 });
@@ -127,6 +137,21 @@ export type InterviewFollowUpNotes = z.infer<
 export type InterviewConversationMemory = z.infer<
   typeof interviewConversationMemorySchema
 >;
+export type RoleSafetyConcern = z.infer<typeof roleSafetyConcernSchema>;
+export const ROLE_SAFETY_PROFILE_STATEMENTS: Readonly<
+  Record<RoleSafetyConcern, string>
+> = {
+  INFANT_CARE:
+    "Before considering this volunteer for infant care, staff should discuss a potential role-safety concern with the volunteer and review the role's safeguarding and supervision requirements.",
+  CHILD_SUPERVISION:
+    "Before considering this volunteer for child supervision, staff should discuss a potential role-safety concern with the volunteer and review the role's safeguarding and supervision requirements.",
+  VULNERABLE_ADULT_CARE:
+    "Before considering this volunteer for vulnerable-adult care, staff should discuss a potential role-safety concern with the volunteer and review the role's safeguarding and supervision requirements.",
+  PASSENGER_TRANSPORT:
+    "Before considering this volunteer for passenger transport, staff should discuss a potential role-safety concern with the volunteer and review the role's driving, screening, and supervision requirements.",
+  FINANCIAL_HANDLING:
+    "Before considering this volunteer for financial handling, staff should discuss a potential role-safety concern with the volunteer and review the role's screening and financial-control requirements.",
+};
 export type SearchPlan = z.infer<typeof searchPlanSchema>;
 export type RerankerOutput = z.infer<typeof rerankerOutputSchema>;
 export type ProfileStatus = z.infer<typeof profileStatusSchema>;

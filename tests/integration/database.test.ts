@@ -4,6 +4,7 @@ import { normalizeDisplayName, sha256 } from "../../packages/auth/src/index.js";
 import { PostgresExecutor, Repository } from "../../packages/db/src/index.js";
 import {
   CONSENT_VERSION,
+  ROLE_SAFETY_PROFILE_STATEMENTS,
   embeddingVersion,
   reciprocalRankFusion,
 } from "../../packages/shared/src/index.js";
@@ -83,8 +84,9 @@ describe("PostgreSQL invariants", () => {
         content: "What kind of event planning would be a good fit?",
       },
     ];
-    const exact =
+    const incompleteExact =
       "This fictional profile offers occasional community event planning while leaving every future request optional and self-reported.";
+    const exact = `${incompleteExact} ${ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE}`;
     expect(
       await repository.updatePendingInterview({
         personId,
@@ -98,6 +100,7 @@ describe("PostgreSQL invariants", () => {
           ],
           closedTopics: [],
         },
+        roleSafetyConcerns: ["INFANT_CARE"],
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -115,6 +118,7 @@ describe("PostgreSQL invariants", () => {
           ],
           closedTopics: [],
         },
+        roleSafetyConcerns: [],
         now: new Date("2026-07-16T13:01:00.000Z"),
       }),
     ).toBeNull();
@@ -134,7 +138,27 @@ describe("PostgreSQL invariants", () => {
       ],
       closedTopics: [],
     });
+    expect(resumed?.roleSafetyConcerns).toEqual(["INFANT_CARE"]);
 
+    expect(
+      await repository.saveApprovedProfile({
+        personId,
+        exactText: incompleteExact,
+        sha256: sha256(incompleteExact),
+        embedding: await ai.embed(incompleteExact, 1024),
+        embeddingModelId: "amazon.titan-embed-text-v2:0",
+        embeddingVersion: embeddingVersion(
+          "fake",
+          "amazon.titan-embed-text-v2:0",
+          1024,
+        ),
+        promptVersion: PROMPT_VERSIONS.profileDrafter,
+        consentVersion: CONSENT_VERSION,
+        now: new Date("2026-07-16T13:30:00.000Z"),
+        expectedPendingRevision: 1,
+        expectedProposedProfile: exact,
+      }),
+    ).toBe(false);
     expect(
       await repository.saveApprovedProfile({
         personId,

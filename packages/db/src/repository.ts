@@ -1,14 +1,17 @@
 import {
+  ROLE_SAFETY_PROFILE_STATEMENTS,
   interviewConversationMemorySchema,
   interviewCompletenessSchema,
   interviewFollowUpNotesSchema,
   interviewMessageSchema,
   profileTextSchema,
+  roleSafetyConcernsSchema,
   type InterviewCompleteness,
   type InterviewConversationMemory,
   type InterviewFollowUpNotes,
   type InterviewMessage,
   type ProfileStatus,
+  type RoleSafetyConcern,
   type StaffGroup,
 } from "@gis/shared";
 import type { SqlExecutor } from "./executor.js";
@@ -49,6 +52,7 @@ export interface PendingInterview {
   completenessConfidence: InterviewCompleteness;
   followUpNotes: InterviewFollowUpNotes;
   conversationMemory: InterviewConversationMemory;
+  roleSafetyConcerns: RoleSafetyConcern[];
   revision: number;
   startedAt: Date;
   updatedAt: Date;
@@ -69,6 +73,10 @@ function pendingFollowUpNotes(value: string): InterviewFollowUpNotes {
 
 function pendingConversationMemory(value: string): InterviewConversationMemory {
   return interviewConversationMemorySchema.parse(JSON.parse(value));
+}
+
+function pendingRoleSafetyConcerns(value: string): RoleSafetyConcern[] {
+  return roleSafetyConcernsSchema.parse(JSON.parse(value));
 }
 
 export class Repository {
@@ -210,6 +218,7 @@ export class Repository {
     personId: string;
     openingMessage: string;
     initialCompletenessConfidence: InterviewCompleteness;
+    initialRoleSafetyConcerns?: readonly RoleSafetyConcern[];
     now: Date;
   }): Promise<PendingInterview> {
     return this.executor.transaction(async (transaction) => {
@@ -218,8 +227,8 @@ export class Repository {
         [input.personId, input.now],
       );
       await transaction.query(
-        `INSERT INTO pending_interviews(person_id, messages, completeness_confidence, follow_up_notes, revision, started_at, updated_at, expires_at)
-         VALUES ($1::uuid, $2::jsonb, $3, '[]'::jsonb, 0, $4::timestamptz, $4::timestamptz,
+        `INSERT INTO pending_interviews(person_id, messages, completeness_confidence, follow_up_notes, role_safety_concerns, revision, started_at, updated_at, expires_at)
+         VALUES ($1::uuid, $2::jsonb, $3, '[]'::jsonb, $5::jsonb, 0, $4::timestamptz, $4::timestamptz,
            $4::timestamptz + interval '30 days')
          ON CONFLICT (person_id) DO NOTHING`,
         [
@@ -231,6 +240,11 @@ export class Repository {
             input.initialCompletenessConfidence,
           ),
           input.now,
+          JSON.stringify(
+            roleSafetyConcernsSchema.parse(
+              input.initialRoleSafetyConcerns ?? [],
+            ),
+          ),
         ],
       );
       const result = await transaction.query<{
@@ -239,6 +253,7 @@ export class Repository {
         completeness_confidence: string;
         follow_up_notes_json: string;
         conversation_memory_json: string;
+        role_safety_concerns_json: string;
         revision: number;
         started_at: Date;
         updated_at: Date;
@@ -247,6 +262,7 @@ export class Repository {
         `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
                 follow_up_notes::text AS follow_up_notes_json,
                 conversation_memory::text AS conversation_memory_json,
+                role_safety_concerns::text AS role_safety_concerns_json,
                 revision, started_at, updated_at, expires_at
          FROM pending_interviews
          WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
@@ -263,6 +279,9 @@ export class Repository {
         followUpNotes: pendingFollowUpNotes(row.follow_up_notes_json),
         conversationMemory: pendingConversationMemory(
           row.conversation_memory_json,
+        ),
+        roleSafetyConcerns: pendingRoleSafetyConcerns(
+          row.role_safety_concerns_json,
         ),
         revision: row.revision,
         startedAt: row.started_at,
@@ -282,6 +301,7 @@ export class Repository {
       completeness_confidence: string;
       follow_up_notes_json: string;
       conversation_memory_json: string;
+      role_safety_concerns_json: string;
       revision: number;
       started_at: Date;
       updated_at: Date;
@@ -290,6 +310,7 @@ export class Repository {
       `SELECT messages::text AS messages_json, proposed_profile, completeness_confidence,
               follow_up_notes::text AS follow_up_notes_json,
               conversation_memory::text AS conversation_memory_json,
+              role_safety_concerns::text AS role_safety_concerns_json,
               revision, started_at, updated_at, expires_at
        FROM pending_interviews
        WHERE person_id = $1::uuid AND expires_at > $2::timestamptz`,
@@ -307,6 +328,9 @@ export class Repository {
           conversationMemory: pendingConversationMemory(
             row.conversation_memory_json,
           ),
+          roleSafetyConcerns: pendingRoleSafetyConcerns(
+            row.role_safety_concerns_json,
+          ),
           revision: row.revision,
           startedAt: row.started_at,
           updatedAt: row.updated_at,
@@ -322,6 +346,7 @@ export class Repository {
     completenessConfidence: InterviewCompleteness;
     followUpNotes: readonly string[];
     conversationMemory: InterviewConversationMemory;
+    roleSafetyConcerns: readonly RoleSafetyConcern[];
     proposedProfile?: string | null;
     now: Date;
   }): Promise<number | null> {
@@ -339,6 +364,9 @@ export class Repository {
     const conversationMemory = interviewConversationMemorySchema.parse(
       input.conversationMemory,
     );
+    const roleSafetyConcerns = roleSafetyConcernsSchema.parse(
+      input.roleSafetyConcerns,
+    );
     const result = await this.executor.query<{ revision: number }>(
       `UPDATE pending_interviews
        SET messages = $3::jsonb,
@@ -346,6 +374,7 @@ export class Repository {
            completeness_confidence = $7,
            follow_up_notes = $8::jsonb,
            conversation_memory = $9::jsonb,
+           role_safety_concerns = $10::jsonb,
            revision = revision + 1,
            updated_at = $4::timestamptz
        WHERE person_id = $1::uuid AND revision = $2 AND expires_at > $4::timestamptz
@@ -360,6 +389,7 @@ export class Repository {
         completenessConfidence,
         JSON.stringify(followUpNotes),
         JSON.stringify(conversationMemory),
+        JSON.stringify(roleSafetyConcerns),
       ],
     );
     return result.rows[0]?.revision ?? null;
@@ -380,8 +410,10 @@ export class Repository {
   }): Promise<boolean> {
     return this.executor.transaction(async (transaction) => {
       if (input.expectedPendingRevision !== undefined) {
-        const pending = await transaction.query(
-          `SELECT 1
+        const pending = await transaction.query<{
+          role_safety_concerns_json: string;
+        }>(
+          `SELECT role_safety_concerns::text AS role_safety_concerns_json
            FROM pending_interviews
            WHERE person_id = $1::uuid
              AND revision = $2
@@ -396,6 +428,18 @@ export class Repository {
           ],
         );
         if (pending.rowCount === 0) return false;
+        const requiredConcerns = pendingRoleSafetyConcerns(
+          pending.rows[0]!.role_safety_concerns_json,
+        );
+        if (
+          requiredConcerns.some(
+            (concern) =>
+              !input.exactText.includes(
+                ROLE_SAFETY_PROFILE_STATEMENTS[concern],
+              ),
+          )
+        )
+          return false;
       }
       await transaction.query(
         `INSERT INTO profiles(person_id, approved_text, approved_text_sha256, embedding, embedding_model_id,

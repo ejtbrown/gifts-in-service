@@ -28,7 +28,11 @@ import type {
 import { honorMemberInterviewDirection } from "./interview-control.js";
 import {
   AiMalformedInterviewResponseError,
+  AiMalformedProfileDraftResponseError,
   AiSafetyInterventionError,
+  sanitizeApprovedProfileSource,
+  sanitizeProfileDraftMessages,
+  validateProposedProfile,
 } from "./safety.js";
 
 const draftSchema = z.object({
@@ -79,6 +83,7 @@ const interviewTurnSchema = z
   });
 
 const MAX_INTERVIEW_DECISION_ATTEMPTS = 3;
+const MAX_PROFILE_DRAFT_ATTEMPTS = 3;
 
 export interface BedrockAdapterConfig {
   region: string;
@@ -450,26 +455,56 @@ Current approved profile state: ${
     messages: readonly InterviewMessage[],
     currentProfile?: string,
   ): Promise<ProfileDraft> {
-    const source = currentProfile
-      ? `\nCurrent approved profile (source context only):\n${currentProfile}`
+    const sanitizedMessages = sanitizeProfileDraftMessages(messages);
+    const sanitizedCurrentProfile = currentProfile
+      ? sanitizeApprovedProfileSource(currentProfile)
+      : null;
+    const source = sanitizedCurrentProfile
+      ? `\nCurrent approved profile (source context only):\n${sanitizedCurrentProfile}`
       : "";
-    const text = await this.#converse(
-      this.#config.interviewModelId,
-      `${this.#config.profileDrafterPrompt}${source}\nReturn JSON only.`,
-      [
-        ...messagesForBedrock(messages),
-        {
-          role: "user",
-          content: [
+    for (let attempt = 1; attempt <= MAX_PROFILE_DRAFT_ATTEMPTS; attempt += 1) {
+      const retryInstruction =
+        attempt === 1
+          ? ""
+          : "\nA previous draft was rejected before display. Create a fresh draft, return valid JSON, and exclude every diagnosis, health detail, reference to private information, and unsupported suitability claim. Preserve only neutral volunteering facts and member-stated functional boundaries.";
+      let text: string;
+      try {
+        text = await this.#converse(
+          this.#config.interviewModelId,
+          `${this.#config.profileDrafterPrompt}${source}${retryInstruction}\nReturn JSON only.`,
+          [
+            ...messagesForBedrock(sanitizedMessages),
             {
-              text: "Create the volunteer profile draft from the conversation now. Return the requested JSON only.",
+              role: "user",
+              content: [
+                {
+                  text: "Create the volunteer profile draft from the conversation now. Return the requested JSON only.",
+                },
+              ],
             },
           ],
-        },
-      ],
-      1200,
-    );
-    return draftSchema.parse(parseJson(text));
+          1200,
+        );
+      } catch (error) {
+        if (error instanceof AiSafetyInterventionError) {
+          emitMetric("ProfileDraftRetries", 1, "Count", "PrivacySafety");
+          if (attempt < MAX_PROFILE_DRAFT_ATTEMPTS) continue;
+          break;
+        }
+        throw error;
+      }
+      let parsed: z.infer<typeof draftSchema> | null = null;
+      try {
+        const candidate = draftSchema.safeParse(parseJson(text));
+        if (candidate.success) parsed = candidate.data;
+      } catch {
+        parsed = null;
+      }
+      if (parsed && validateProposedProfile(parsed.profile_text) === null)
+        return parsed;
+      emitMetric("ProfileDraftRetries", 1, "Count", "PrivacySafety");
+    }
+    throw new AiMalformedProfileDraftResponseError();
   }
 
   async planSearch(query: string): Promise<SearchPlan> {

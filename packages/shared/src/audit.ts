@@ -12,6 +12,8 @@ const FORBIDDEN_LOG_KEYS = new Set([
   "follow_up_notes",
   "conversationMemory",
   "conversation_memory",
+  "roleSafetyConcerns",
+  "role_safety_concerns",
   "establishedFacts",
   "closedTopics",
   "requestBody",

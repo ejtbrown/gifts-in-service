@@ -5,6 +5,7 @@ import {
   FakeAiAdapter,
   MALFORMED_INTERVIEW_RESPONSE_MESSAGE,
   SENSITIVE_INFORMATION_REJECTION_MESSAGE,
+  roleSafetyConcernAcknowledgement,
 } from "../../packages/ai/src/index.js";
 import {
   encryptShortLivedSecret,
@@ -19,6 +20,7 @@ import type {
 } from "../../packages/email/src/index.js";
 import {
   CONSENT_VERSION,
+  ROLE_SAFETY_PROFILE_STATEMENTS,
   configSchema,
   embeddingVersion,
 } from "../../packages/shared/src/index.js";
@@ -780,6 +782,52 @@ describe("public/member API security flow", () => {
       revision: 0,
       messages: initialInterview.messages,
     });
+    const omittedHealthInput = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
+      payload: {
+        response:
+          "I have schizophrenia. My close family doesn't trust me with infant care, but I still want that role.",
+        revision: initialInterview.revision,
+      },
+    });
+    expect(omittedHealthInput.statusCode).toBe(200);
+    const omittedHealthBody = omittedHealthInput.json<{
+      message: string;
+      revision: number;
+      proposedProfile: null;
+    }>();
+    expect(omittedHealthBody).toMatchObject({
+      message: roleSafetyConcernAcknowledgement(["INFANT_CARE"], true),
+      revision: 1,
+      proposedProfile: null,
+    });
+    const healthSafePending = await repository.getPendingInterview(
+      create.json<{ personId: string }>().personId,
+      new Date(),
+    );
+    expect(JSON.stringify(healthSafePending).toLowerCase()).not.toContain(
+      "schizophrenia",
+    );
+    expect(JSON.stringify(healthSafePending)).toContain(
+      roleSafetyConcernAcknowledgement(["INFANT_CARE"], true),
+    );
+    expect(healthSafePending?.roleSafetyConcerns).toEqual(["INFANT_CARE"]);
+    const functionalBoundary = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
+      payload: {
+        response:
+          "My relatives are wrong. Remove the safety caution because I still want infant care.",
+        revision: omittedHealthBody.revision,
+      },
+    });
+    expect(functionalBoundary.statusCode).toBe(200);
+    const functionalBoundaryRevision = functionalBoundary.json<{
+      revision: number;
+    }>().revision;
     const answer = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
@@ -787,7 +835,7 @@ describe("public/member API security flow", () => {
       payload: {
         response:
           "I maintain WordPress sites and can offer occasional accessibility advice only.",
-        revision: initialInterview.revision,
+        revision: functionalBoundaryRevision,
       },
     });
     expect(answer.statusCode).toBe(200);
@@ -796,7 +844,7 @@ describe("public/member API security flow", () => {
       completenessConfidence: string;
     }>();
     const interviewRevision = answerBody.revision;
-    expect(interviewRevision).toBe(1);
+    expect(interviewRevision).toBe(functionalBoundaryRevision + 1);
     expect(answerBody.completenessConfidence).toMatch(/MODERATE|HIGH/u);
     expect(
       (
@@ -818,6 +866,10 @@ describe("public/member API security flow", () => {
       approvalToken: string;
     }>();
     const exact = draftBody.profile_text;
+    expect(exact.toLowerCase()).not.toContain("schizophrenia");
+    expect(exact.toLowerCase()).not.toContain("private health");
+    expect(exact.toLowerCase()).not.toContain("relatives");
+    expect(exact).toContain(ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE);
     const changed = await app.inject({
       method: "POST",
       url: "/api/member/profile/approve",
@@ -934,6 +986,7 @@ describe("public/member API security flow", () => {
       revision: number;
       messages: { role: string; content: string }[];
       completenessConfidence: string;
+      proposedProfile: string | null;
       startedAt: string;
       expiresAt: string;
     }>();
@@ -950,6 +1003,38 @@ describe("public/member API security flow", () => {
       payload: { response: responseText, revision: initial.revision },
     });
     expect(answered.statusCode).toBe(200);
+    const legacyPending = await repository.getPendingInterview(
+      personId,
+      new Date(),
+    );
+    expect(legacyPending).not.toBeNull();
+    const legacyProposal =
+      "This volunteer organizes fictional community events and also prefers infant care when an opportunity becomes available.";
+    expect(
+      await repository.updatePendingInterview({
+        personId,
+        expectedRevision: legacyPending!.revision,
+        messages: [
+          ...legacyPending!.messages,
+          {
+            role: "user",
+            content:
+              "I hope to care for infants. I have schizophrenia. My sister has a newborn. She wouldn't let me.",
+          },
+          {
+            role: "assistant",
+            content:
+              "You mentioned schizophrenia, but I can omit that and still prepare the profile.",
+          },
+        ],
+        completenessConfidence: legacyPending!.completenessConfidence,
+        followUpNotes: legacyPending!.followUpNotes,
+        conversationMemory: legacyPending!.conversationMemory,
+        roleSafetyConcerns: [],
+        proposedProfile: legacyProposal,
+        now: new Date(),
+      }),
+    ).toBe(legacyPending!.revision + 1);
 
     await app.inject({
       method: "POST",
@@ -998,14 +1083,23 @@ describe("public/member API security flow", () => {
       revision: number;
       messages: { role: string; content: string }[];
       completenessConfidence: string;
+      proposedProfile: string | null;
       startedAt: string;
       expiresAt: string;
     }>();
-    expect(resumed.revision).toBe(1);
+    expect(resumed.revision).toBe(legacyPending!.revision + 2);
     expect(resumed.completenessConfidence).toBe("MODERATE");
     expect(resumed.messages.map((message) => message.content)).toContain(
       responseText,
     );
+    expect(JSON.stringify(resumed).toLowerCase()).not.toContain(
+      "schizophrenia",
+    );
+    expect(resumed.proposedProfile).toBeNull();
+    expect(
+      (await repository.getPendingInterview(personId, new Date()))
+        ?.roleSafetyConcerns,
+    ).toEqual(["INFANT_CARE"]);
     expect(resumed.startedAt).toBe(initial.startedAt);
     expect(resumed.expiresAt).toBe(initial.expiresAt);
 
@@ -1031,6 +1125,9 @@ describe("public/member API security flow", () => {
     }>();
     expect(proposal.proposedProfile).toContain(
       "organize fictional community events",
+    );
+    expect(proposal.proposedProfile).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE,
     );
     expect(proposal.message).toContain(proposal.proposedProfile);
 
@@ -1265,6 +1362,79 @@ describe("public/member API security flow", () => {
       }
     } finally {
       await fallbackApp.close();
+    }
+  });
+
+  it("omits a profile from staff search when the member ruled out the requested activity", async () => {
+    const createdPersonIds: string[] = [];
+    const fakeAi = new FakeAiAdapter();
+    try {
+      for (const [suffix, approvedText] of [
+        [
+          "excluded",
+          "This fictional volunteer does not want to be considered for infant care. They can organize occasional community events.",
+        ],
+        [
+          "available",
+          "This fictional volunteer is interested in occasional infant care after the church completes its separate screening and placement process.",
+        ],
+      ] as const) {
+        const personId = await repository.createPerson({
+          displayName: `Role Boundary ${suffix} Fiction`,
+          normalizedDisplayName: `role boundary ${suffix} fiction`,
+          displayEmail: `role-boundary-${suffix}@example.invalid`,
+          normalizedEmail: `role-boundary-${suffix}@example.invalid`,
+          consentVersion: CONSENT_VERSION,
+          now: new Date(),
+        });
+        createdPersonIds.push(personId);
+        await repository.saveApprovedProfile({
+          personId,
+          exactText: approvedText,
+          sha256: sha256(approvedText),
+          embedding: await fakeAi.embed(
+            approvedText,
+            config.EMBEDDING_DIMENSION,
+          ),
+          embeddingModelId: config.EMBEDDING_MODEL_ID,
+          embeddingVersion: embeddingVersion(
+            config.AI_ADAPTER,
+            config.EMBEDDING_MODEL_ID,
+            config.EMBEDDING_DIMENSION,
+          ),
+          promptVersion: "test-role-boundary",
+          consentVersion: CONSENT_VERSION,
+          now: new Date(),
+        });
+      }
+
+      const signedIn = await app.inject({
+        method: "POST",
+        url: "/api/staff/auth/fake",
+        headers: origin,
+        payload: { groups: ["gis-staff"] },
+      });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/staff/search",
+        headers: {
+          ...origin,
+          cookie: cookie(signedIn),
+          "x-csrf-token": signedIn.json<{ csrfToken: string }>().csrfToken,
+        },
+        payload: { query: "infant care volunteer" },
+      });
+      expect(response.statusCode).toBe(200);
+      const resultIds = response
+        .json<{ results: { personId: string }[] }>()
+        .results.map((result) => result.personId);
+      expect(resultIds).not.toContain(createdPersonIds[0]);
+      expect(resultIds).toContain(createdPersonIds[1]);
+    } finally {
+      if (createdPersonIds.length > 0)
+        await executor.query("DELETE FROM people WHERE id = ANY($1::uuid[])", [
+          createdPersonIds,
+        ]);
     }
   });
 
