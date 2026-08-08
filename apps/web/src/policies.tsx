@@ -71,6 +71,16 @@ export function PrivacyNoticeContent({
         when you approve your profile or when the 30 days end.
       </p>
       <p>
+        If the service recognizes a health disclosure, it replaces that response
+        with a generic omitted-turn marker. If an answer separately raises a
+        concrete concern about a volunteer activity or placement, the unfinished
+        conversation keeps only a broad role category—not the diagnosis,
+        evidence, relationship, or private reason. The profile may then require
+        neutral wording telling staff to discuss the concern and the role&apos;s
+        objective safeguards before placement. You see that wording before
+        deciding whether to approve the profile.
+      </p>
+      <p>
         Before the church launches the service, it must confirm that the company
         providing the computer assistant will not keep these conversations or
         record their contents in its service logs.
@@ -183,6 +193,15 @@ export function AiUseContent({
         response. It keeps only a generic marker that the turn was omitted and
         asks you to restate a non-sensitive, functional boundary for the
         affected volunteer activity.
+      </p>
+      <p>
+        If an answer separately raises a concrete safety concern about a
+        volunteer activity or placement, the unfinished conversation keeps only
+        a broad role category—not the diagnosis, evidence, relationship, or
+        private reason. The service requires neutral profile wording telling
+        staff to discuss the concern and objective safeguards before placement.
+        You see that wording before approval, but it cannot be removed while the
+        concern remains part of the unfinished interview.
       </p>
       <p>
         Anyone who can use a verified email address associated with the profile

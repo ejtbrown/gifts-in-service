@@ -86,7 +86,7 @@ describe("PostgreSQL invariants", () => {
     ];
     const incompleteExact =
       "This fictional profile offers occasional community event planning while leaving every future request optional and self-reported.";
-    const exact = `${incompleteExact} ${ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE}`;
+    const exact = `${incompleteExact} ${ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE} ${ROLE_SAFETY_PROFILE_STATEMENTS.SENSITIVE_INFORMATION_ACCESS}`;
     expect(
       await repository.updatePendingInterview({
         personId,
@@ -100,7 +100,7 @@ describe("PostgreSQL invariants", () => {
           ],
           closedTopics: [],
         },
-        roleSafetyConcerns: ["INFANT_CARE"],
+        roleSafetyConcerns: ["INFANT_CARE", "SENSITIVE_INFORMATION_ACCESS"],
         proposedProfile: exact,
         now: new Date("2026-07-16T13:00:00.000Z"),
       }),
@@ -138,7 +138,10 @@ describe("PostgreSQL invariants", () => {
       ],
       closedTopics: [],
     });
-    expect(resumed?.roleSafetyConcerns).toEqual(["INFANT_CARE"]);
+    expect(resumed?.roleSafetyConcerns).toEqual([
+      "INFANT_CARE",
+      "SENSITIVE_INFORMATION_ACCESS",
+    ]);
 
     expect(
       await repository.saveApprovedProfile({

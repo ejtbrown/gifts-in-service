@@ -54,15 +54,27 @@ export const interviewConversationMemorySchema = z
   })
   .strict();
 
-export const roleSafetyConcernSchema = z.enum([
+export const ROLE_SAFETY_CONCERNS = [
   "INFANT_CARE",
   "CHILD_SUPERVISION",
   "VULNERABLE_ADULT_CARE",
   "PASSENGER_TRANSPORT",
   "FINANCIAL_HANDLING",
-]);
+  "PASTORAL_COUNSELING",
+  "HOME_VISITATION",
+  "FOOD_SERVICE",
+  "MEDICAL_FIRST_AID",
+  "FACILITIES_EQUIPMENT",
+  "SECURITY_EMERGENCY_RESPONSE",
+  "SENSITIVE_INFORMATION_ACCESS",
+  "GENERAL_ROLE_SAFETY",
+] as const;
 
-export const roleSafetyConcernsSchema = z.array(roleSafetyConcernSchema).max(5);
+export const roleSafetyConcernSchema = z.enum(ROLE_SAFETY_CONCERNS);
+
+export const roleSafetyConcernsSchema = z
+  .array(roleSafetyConcernSchema)
+  .max(ROLE_SAFETY_CONCERNS.length);
 
 export const profileDraftRequestSchema = z.object({
   revision: z.number().int().min(0),
@@ -151,6 +163,22 @@ export const ROLE_SAFETY_PROFILE_STATEMENTS: Readonly<
     "Before considering this volunteer for passenger transport, staff should discuss a potential role-safety concern with the volunteer and review the role's driving, screening, and supervision requirements.",
   FINANCIAL_HANDLING:
     "Before considering this volunteer for financial handling, staff should discuss a potential role-safety concern with the volunteer and review the role's screening and financial-control requirements.",
+  PASTORAL_COUNSELING:
+    "Before considering this volunteer for pastoral care, counseling, or mentoring, staff should discuss a potential role-safety concern with the volunteer and review the role's boundaries, safeguarding, and supervision requirements.",
+  HOME_VISITATION:
+    "Before considering this volunteer for home visitation, staff should discuss a potential role-safety concern with the volunteer and review the role's visitation, safeguarding, and check-in requirements.",
+  FOOD_SERVICE:
+    "Before considering this volunteer for food service, staff should discuss a potential role-safety concern with the volunteer and review the role's food-safety, allergy, and supervision requirements.",
+  MEDICAL_FIRST_AID:
+    "Before considering this volunteer for first-aid or medical-support roles, staff should discuss a potential role-safety concern with the volunteer and review the role's training, credential, scope, and emergency requirements.",
+  FACILITIES_EQUIPMENT:
+    "Before considering this volunteer for facilities or equipment work, staff should discuss a potential role-safety concern with the volunteer and review the role's training, authorization, protective-equipment, and worksite requirements.",
+  SECURITY_EMERGENCY_RESPONSE:
+    "Before considering this volunteer for security or emergency-response roles, staff should discuss a potential role-safety concern with the volunteer and review the role's training, authority, escalation, and emergency-plan requirements.",
+  SENSITIVE_INFORMATION_ACCESS:
+    "Before considering this volunteer for access to member records or privileged systems, staff should discuss a potential role-safety concern with the volunteer and review the role's authorization, data-handling, and least-privilege requirements.",
+  GENERAL_ROLE_SAFETY:
+    "Before placing this volunteer in any role, staff should discuss a potential role-safety concern with the volunteer and apply the role's screening, supervision, and safeguarding requirements.",
 };
 export type SearchPlan = z.infer<typeof searchPlanSchema>;
 export type RerankerOutput = z.infer<typeof rerankerOutputSchema>;

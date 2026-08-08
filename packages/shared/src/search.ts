@@ -102,6 +102,10 @@ const RELEVANT_LIMITATION =
 const RELEVANT_EXCLUSION =
   /\b(?:(?:do(?:es)? not|don['’]t|doesn['’]t) want to be considered for|not available for|not willing to (?:do|provide|serve in)|should not be considered for)\b/iu;
 
+const GENERAL_ROLE_SAFETY_CAUTION =
+  /\bbefore placing this volunteer in any role, staff should discuss a potential role-safety concern\b/iu;
+const ROLE_SAFETY_CAUTION = /\bpotential role-safety concern\b/iu;
+
 function stem(token: string): string {
   if (token.endsWith("ies") && token.length > 4)
     return `${token.slice(0, -3)}y`;
@@ -154,6 +158,7 @@ export interface DeterministicSearchExplanation {
   cautions: string[];
   hasRelevantLimitation: boolean;
   hasRelevantExclusion: boolean;
+  hasRoleSafetyCaution: boolean;
 }
 
 export function relevanceWithProfileLimitations(
@@ -227,14 +232,37 @@ export function deterministicSearchExplanation(
       (left, right) => right.score - left.score || left.index - right.index,
     );
   const positiveEvidence = scoredSentences.filter((item) => item.score > 0);
-  const selectedEvidence =
+  const generalSafetyCaution = sentences.find((sentence) =>
+    GENERAL_ROLE_SAFETY_CAUTION.test(sentence),
+  );
+  const roleSafetyCaution =
+    generalSafetyCaution ??
+    positiveEvidence.find((item) => ROLE_SAFETY_CAUTION.test(item.sentence))
+      ?.sentence;
+  const selectedEvidenceBase =
     positiveEvidence.length > 0
       ? positiveEvidence.slice(0, 2)
       : scoredSentences.slice(0, 1);
+  const selectedEvidence = roleSafetyCaution
+    ? [
+        ...selectedEvidenceBase,
+        ...(selectedEvidenceBase.some(
+          (item) => item.sentence === roleSafetyCaution,
+        )
+          ? []
+          : [
+              {
+                sentence: roleSafetyCaution,
+                index: sentences.indexOf(roleSafetyCaution),
+                score: 0,
+              },
+            ]),
+      ].slice(0, 3)
+    : selectedEvidenceBase;
   const evidence = selectedEvidence.map((item) => item.sentence.slice(0, 500));
-  const hasRelevantLimitation = positiveEvidence.some((item) =>
-    RELEVANT_LIMITATION.test(item.sentence),
-  );
+  const hasRelevantLimitation =
+    roleSafetyCaution !== undefined ||
+    positiveEvidence.some((item) => RELEVANT_LIMITATION.test(item.sentence));
   const hasRelevantExclusion = positiveEvidence.some((item) =>
     RELEVANT_EXCLUSION.test(item.sentence),
   );
@@ -279,6 +307,11 @@ export function deterministicSearchExplanation(
   if (hasRelevantExclusion)
     reason +=
       " The relevant evidence says the member does not want to be considered for this activity, so the profile is not a match.";
+  else if (roleSafetyCaution)
+    reason +=
+      generalSafetyCaution !== undefined
+        ? " The profile also requires staff review of a general role-safety concern before any placement, which lowers the match grade."
+        : " The relevant evidence requires staff review of a role-safety concern before placement, which lowers the match grade.";
   else if (hasRelevantLimitation)
     reason +=
       " The relevant evidence also states a limitation or developing skill, which lowers the match grade.";
@@ -291,12 +324,19 @@ export function deterministicSearchExplanation(
       ? [
           "The member ruled out this activity; do not treat this result as a possible placement.",
         ]
-      : hasRelevantLimitation
+      : roleSafetyCaution
         ? [
-            "The relevant profile text describes a limitation or developing skill; confirm current proficiency and suitability.",
+            generalSafetyCaution !== undefined
+              ? "The profile requires staff review of a general role-safety concern before any placement; do not characterize the member as cleared or safe."
+              : "The profile requires staff review of a role-safety concern before placement; do not characterize the member as cleared or safe for the activity.",
           ]
-        : [],
+        : hasRelevantLimitation
+          ? [
+              "The relevant profile text describes a limitation or developing skill; confirm current proficiency and suitability.",
+            ]
+          : [],
     hasRelevantLimitation,
     hasRelevantExclusion,
+    hasRoleSafetyCaution: roleSafetyCaution !== undefined,
   };
 }

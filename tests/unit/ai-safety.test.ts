@@ -127,6 +127,11 @@ describe("AI safety boundaries", () => {
         "I should not rule out infant care just because I am new to it.",
       ),
     ).toEqual([]);
+    expect(
+      detectRoleSafetyConcerns(
+        "I also enjoy bookkeeping. My family doesn't trust me with infant care.",
+      ),
+    ).toEqual(["INFANT_CARE"]);
 
     const ordinaryDraft =
       "This volunteer enjoys organizing community events and is interested in infant care when a suitable opportunity arises.";
@@ -144,6 +149,93 @@ describe("AI safety boundaries", () => {
         ?.kind,
     ).toBe("PROFILE_REQUIRED_SAFETY_CONTEXT");
     expect(deriveRoleSafetyConcerns([], enforced)).toEqual(["INFANT_CARE"]);
+  });
+
+  it.each([
+    [
+      "CHILD_SUPERVISION",
+      "I was barred from Sunday school work for safeguarding misconduct, but I still want to teach children.",
+    ],
+    [
+      "VULNERABLE_ADULT_CARE",
+      "My relatives won't allow me to provide vulnerable adult care because they have a serious safety concern.",
+    ],
+    [
+      "PASSENGER_TRANSPORT",
+      "My driver's license is suspended, but I still want to drive people in the church van.",
+    ],
+    [
+      "FINANCIAL_HANDLING",
+      "I previously embezzled church funds, but I still want to handle offerings and do bookkeeping.",
+    ],
+    [
+      "PASTORAL_COUNSELING",
+      "I crossed counseling boundaries while mentoring, but I still want to provide pastoral care.",
+    ],
+    [
+      "HOME_VISITATION",
+      "I entered a parishioner's home without permission during home visits.",
+    ],
+    [
+      "FOOD_SERVICE",
+      "I ignored allergy instructions while serving meals in the church kitchen.",
+    ],
+    [
+      "MEDICAL_FIRST_AID",
+      "I administered the wrong medication while serving in a medical support role.",
+    ],
+    [
+      "FACILITIES_EQUIPMENT",
+      "I bypassed equipment safety guards during building maintenance.",
+    ],
+    [
+      "SECURITY_EMERGENCY_RESPONSE",
+      "I used excessive force while serving on a church security team.",
+    ],
+    [
+      "SENSITIVE_INFORMATION_ACCESS",
+      "I shared confidential member records without permission while serving as a website administrator.",
+    ],
+    [
+      "GENERAL_ROLE_SAFETY",
+      "I was removed from a volunteer role for repeated safety violations.",
+    ],
+  ] as const)("detects a grounded %s concern", (concern, response) => {
+    expect(detectRoleSafetyConcerns(response)).toEqual([concern]);
+    const enforced = applyRequiredRoleSafetyStatements(
+      "This volunteer can help organize fictional community events when available.",
+      [concern],
+    );
+    expect(enforced).toContain(ROLE_SAFETY_PROFILE_STATEMENTS[concern]);
+    expect(validateProposedProfile(enforced)).toBeNull();
+    expect(
+      validateRequiredRoleSafetyStatements(enforced, [concern]),
+    ).toBeNull();
+    expect(sanitizeApprovedProfileSource(enforced)).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS[concern],
+    );
+  });
+
+  it("preserves every supported concern raised together without adding a redundant general caution", () => {
+    expect(
+      detectRoleSafetyConcerns(
+        "I embezzled offerings while doing bookkeeping, and I drive people while impaired.",
+      ),
+    ).toEqual(["PASSENGER_TRANSPORT", "FINANCIAL_HANDLING"]);
+  });
+
+  it.each([
+    "I have anxiety and would like to help with pastoral care.",
+    "I do not have first-aid training yet, but I am willing to take it.",
+    "I was assaulted and now mentor survivors in a supervised program.",
+    "I shared confidential member records with authorization as the database administrator.",
+    "I use known allergens only in clearly labeled recipes for the community meal.",
+    "I use a training weapon only in supervised church security exercises.",
+    "I never assaulted anyone and I will complete every background check.",
+    "Someone made an unsubstantiated accusation about my facilities work.",
+    "I made an emergency threat assessment for the safety team.",
+  ])("does not turn non-evidence into a concern: %s", (response) => {
+    expect(detectRoleSafetyConcerns(response)).toEqual([]);
   });
 
   it("keeps concern evidence and removal attempts out of model draft source", () => {

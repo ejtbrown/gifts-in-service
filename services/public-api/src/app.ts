@@ -2320,15 +2320,20 @@ export async function buildApp(
                             deterministic,
                           )
                         : item.relevance,
-                      reason: item.reason,
-                      evidence: item.evidence,
+                      reason: deterministic?.hasRoleSafetyCaution
+                        ? deterministic.reason
+                        : item.reason,
+                      evidence: deterministic?.hasRoleSafetyCaution
+                        ? deterministic.evidence
+                        : item.evidence,
                       cautions: [
                         ...new Set([
                           ...item.cautions,
                           ...(deterministic?.cautions ?? []),
                         ]),
                       ],
-                      explanationGeneratedByAi: true,
+                      explanationGeneratedByAi:
+                        !deterministic?.hasRoleSafetyCaution,
                     },
                   ];
             })

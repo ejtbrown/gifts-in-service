@@ -45,6 +45,10 @@ const candidates = [
     id: "10000000-0000-4000-8000-000000000008",
     approvedText: `This volunteer expressed interest in infant care. ${ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE}`,
   },
+  {
+    id: "10000000-0000-4000-8000-000000000009",
+    approvedText: `This volunteer has extensive flower-arranging experience. ${ROLE_SAFETY_PROFILE_STATEMENTS.GENERAL_ROLE_SAFETY}`,
+  },
 ];
 
 describe("deterministic AI evaluations", () => {
@@ -101,6 +105,23 @@ describe("deterministic AI evaluations", () => {
     );
     expect(cautioned?.relevance).not.toBe("HIGH");
     expect(cautioned?.evidence.join(" ")).toContain("Before considering");
+    expect(validateGroundedResults(output.results, candidates)).not.toBeNull();
+  });
+
+  it("does not rank a generally safety-cautioned member higher than medium for any role", async () => {
+    const plan = await ai.planSearch("flower arranging volunteer");
+    const output = await ai.rerank(
+      "flower arranging volunteer",
+      plan,
+      candidates,
+    );
+    const cautioned = output.results.find(
+      (result) => result.candidate_id === candidates[8]!.id,
+    );
+    expect(cautioned?.relevance).not.toBe("HIGH");
+    expect(cautioned?.evidence).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS.GENERAL_ROLE_SAFETY,
+    );
     expect(validateGroundedResults(output.results, candidates)).not.toBeNull();
   });
 });
