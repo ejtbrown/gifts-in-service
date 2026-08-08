@@ -10,12 +10,14 @@ describe("plain-language disclosures", () => {
   it("versions the revised policy and explains AI without cloud jargon", () => {
     const copy = initialDisclosure.paragraphs.join(" ");
 
-    expect(CONSENT_VERSION).toBe("2026-08-04.v3");
-    expect(PRIVACY_NOTICE_VERSION).toBe("2026-08-04.draft-v3");
+    expect(CONSENT_VERSION).toBe("2026-08-07.v4");
+    expect(PRIVACY_NOTICE_VERSION).toBe("2026-08-07.draft-v4");
     expect(copy).toContain(
       "artificial intelligence (AI) assistant—a computer program",
     );
     expect(copy).toContain("shared mailbox");
+    expect(copy).toContain("concrete concern");
+    expect(copy).toContain("will not state a diagnosis or private reason");
     expect(copy).not.toMatch(
       /AWS|Bedrock|embedding|semantic retrieval|stateful model session/iu,
     );

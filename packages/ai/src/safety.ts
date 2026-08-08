@@ -41,18 +41,32 @@ export const PRIVATE_HEALTH_FOLLOW_UP_MESSAGE =
   "I left out the private health detail and will not put it in your profile. Without repeating it, which volunteer activity does this affect, and would you prefer to rule that activity out or ask staff to discuss that activity’s objective requirements with you before considering placement?";
 
 const ROLE_SAFETY_ACTIVITY_PATTERNS: Readonly<
-  Record<RoleSafetyConcern, RegExp>
+  Partial<Record<RoleSafetyConcern, RegExp>>
 > = {
   INFANT_CARE:
     /\b(?:infant(?:s| care| childcare)?|bab(?:y|ies)|newborns?|church nursery|nursery care)\b/iu,
   CHILD_SUPERVISION:
-    /\b(?:child(?:ren)?(?: care| supervision)|childcare|babysit(?:ting)?|children'?s ministry|youth supervision)\b/iu,
+    /\b(?:child(?:ren)?(?: care| supervision)|childcare|babysit(?:ting)?|children'?s ministry|youth (?:group|ministry|supervision)|sunday school|vacation bible school|vbs|work(?:ing)? with (?:children|youth)|teach(?:ing)? (?:children|youth)|coach(?:ing)? (?:children|youth))\b/iu,
   VULNERABLE_ADULT_CARE:
-    /\b(?:vulnerable adult care|elder care|elderly care|senior care|dependent adult care|caregiving for (?:an )?(?:elderly|vulnerable|dependent) adult)\b/iu,
+    /\b(?:vulnerable adult care|elder care|elderly care|senior care|dependent adult care|caregiving for (?:an )?(?:elderly|vulnerable|dependent) adult|(?:support(?:ing)?|serv(?:e|ing)|work(?:ing)? with) (?:vulnerable|dependent|frail|homebound) adults?)\b/iu,
   PASSENGER_TRANSPORT:
-    /\b(?:passenger transport|transport(?:ing)? (?:people|members|children|youth|seniors)|driv(?:e|ing) (?:people|members|children|youth|seniors)|church van)\b/iu,
+    /\b(?:passenger transport|transport(?:ing)? (?:people|members|children|youth|seniors|volunteers)|driv(?:e|ing) (?:people|members|children|youth|seniors|volunteers)|giv(?:e|ing) rides?|church (?:bus|shuttle|van)|van driver)\b/iu,
   FINANCIAL_HANDLING:
-    /\b(?:financial handling|handling (?:cash|money|donations|offerings)|counting (?:cash|money|donations|offerings)|bookkeeping|church finances)\b/iu,
+    /\b(?:financial handling|handling (?:cash|money|donations|offerings)|counting (?:cash|money|donations|offerings)|bookkeeping|church finances|church treasurer|expense approvals?|purchase cards?|bank(?:ing)? access|reimbursements?)\b/iu,
+  PASTORAL_COUNSELING:
+    /\b(?:pastoral (?:care|counseling|counselling)|spiritual (?:care|direction|counseling|counselling)|prayer ministry|lay counsel(?:ing|ling)|peer counsel(?:ing|ling)|grief support|support group facilitat(?:e|ion|or)|mentor(?:ing)?|one[- ](?:to[- ]one|on[- ]one) (?:ministry|support|counseling|counselling|mentoring))\b/iu,
+  HOME_VISITATION:
+    /\b(?:home visits?|home visitation|homebound ministry|visit(?:ing)? (?:members|parishioners|people|seniors|the sick|the homebound) (?:at|in) (?:their )?homes?|hospital visitation|nursing[- ]home visits?|tak(?:e|ing) communion to (?:the )?homebound)\b/iu,
+  FOOD_SERVICE:
+    /\b(?:food (?:service|preparation|prep|handling|pantry)|church kitchen|community meals?|meal ministry|cook(?:ing)? (?:for|at) (?:church|events?|groups?|the congregation)|serv(?:e|ing) (?:food|meals)|potluck coordination|kitchen volunteer)\b/iu,
+  MEDICAL_FIRST_AID:
+    /\b(?:first[- ]aid|medical (?:support|care|team)|health ministry|parish nurs(?:e|ing)|administer(?:ing)? (?:medication|medicine)|medication administration|emergency medical response|aed|cpr)\b/iu,
+  FACILITIES_EQUIPMENT:
+    /\b(?:building maintenance|facilit(?:y|ies) (?:work|maintenance|repair)|repair work|construction|electrical work|plumbing|roof(?:ing)?|ladder work|power tools?|groundskeeping|landscaping|snow removal|heavy equipment|stage rigging|equipment maintenance)\b/iu,
+  SECURITY_EMERGENCY_RESPONSE:
+    /\b(?:church security|security team|safety team|armed security|emergency response|evacuation (?:team|leader)|fire watch|traffic control|parking[- ]lot security|incident response|emergency planning)\b/iu,
+  SENSITIVE_INFORMATION_ACCESS:
+    /\b(?:member records?|confidential records?|personal data|church database|church directory data|pastoral records?|counseling records?|donor records?|background[- ]check records?|database administrat(?:ion|or)|systems? administrat(?:ion|or)|IT admin(?:istration|istrator)?|admin(?:istrative)? access|privileged access|account access|computer security|cybersecurity|information security|website admin(?:istration|istrator)?|email admin(?:istration|istrator)?)\b/iu,
 };
 
 const GROUNDED_ROLE_SAFETY_PATTERNS: readonly RegExp[] = [
@@ -61,7 +75,72 @@ const GROUNDED_ROLE_SAFETY_PATTERNS: readonly RegExp[] = [
   /\b(?:I|the member|the volunteer|they|he|she)\b[^.!?\n]{0,80}\b(?:cannot safely|can't safely|may be unsafe|might be unsafe|(?:am|is|are|was|were) unsafe|(?:should not|shouldn't|must not)\b(?![^.!?\n]{0,40}\brule out\b)[^.!?\n]{0,40}\b(?:care|watch|supervise|drive|transport|handle|serve|be alone))\b/iu,
   /\b(?:barred|prohibited|forbidden|not allowed|restricted)\b[^.!?\n]{0,100}\b(?:from|to|around|with)\b/iu,
   /\b(?:a safety risk|a danger|risk of harm|credible safety concern|serious safety concern|role-safety concern|(?:raised?|identified?|multiple|several) red flags?)\b/iu,
+  /\bI\s+(?:refuse|decline)\s+(?:to\s+)?(?:(?:complete|take|accept|follow|submit to|undergo|agree to|cooperate with)\s+)?(?:a\s+)?(?:background check|screening|safeguarding training|safety training|supervision|two[- ]adult rule|code of conduct|boundary rules?|safety (?:rules?|procedures?|checks?))\b/iu,
+  /\bI\s+(?:will not|won't|do not|don't)\s+(?:complete|take|accept|follow|submit to|undergo|agree to|cooperate with)\s+(?:a\s+)?(?:background check|screening|safeguarding training|safety training|supervision|two[- ]adult rule|code of conduct|boundary rules?|safety (?:rules?|procedures?|checks?))\b/iu,
+  /\bI\s+(?:prefer|want|need|insist on)\b[^.!?\n]{0,60}\b(?:be(?:ing)?|work(?:ing)?|meet(?:ing)?|spend(?:ing)? time)\b[^.!?\n]{0,40}\b(?:alone|privately|unobserved|unmonitored|unsupervised)\b/iu,
 ];
+
+const GENERAL_GROUNDED_ROLE_SAFETY_PATTERNS: readonly RegExp[] = [
+  /\bI\s+(?:(?:have|had)\s+)?(?:(?:once|previously|repeatedly)\s+)?(?:assaulted|attacked|physically harmed|hit|punched|choked|stalked|sexually harassed|sexually abused|molested)\b[^.!?\n]{0,80}\b(?:someone|a person|people|another person|a child|children|an adult|a coworker|a volunteer|a member)\b/iu,
+  /\bI\s+(?:(?:have|had)\s+)?(?:(?:once|previously|repeatedly)\s+)?(?:stole|embezzled|misused|diverted)\b[^.!?\n]{0,60}\b(?:money|cash|funds|donations|offerings|property|a purchase card)\b/iu,
+  /\bI\s+(?:made|make|have made)\s+(?:a\s+)?(?:credible\s+)?threats?\b[^.!?\n]{0,80}\b(?:harm|hurt|kill|attack|violence|someone|people|a person)\b/iu,
+  /\bI\s+(?:want|plan|intend|am going)\s+to\s+(?:harm|hurt|kill|attack)\b[^.!?\n]{0,50}\b(?:someone|people|a person|a member|a volunteer)\b/iu,
+  /\bI\s+(?:was|have been|had been)\s+(?:removed|dismissed|suspended|barred|banned|disciplined)\b[^.!?\n]{0,100}\b(?:safety|safeguarding|misconduct|violence|harassment|abuse|theft|boundary violations?)\b/iu,
+  /\bI\s+(?:have|had)\s+(?:a\s+)?history of\s+(?:violence|assault|harassment|abuse|theft|safety violations?|boundary violations?)\b/iu,
+  /\bI\s+(?:volunteer|work|serve|drive|supervise|provide care)\b[^.!?\n]{0,60}\b(?:while|when)\s+(?:drunk|high|intoxicated|impaired)\b/iu,
+  /\bI\s+(?:ignore|disregard|bypass|disable|break)\b[^.!?\n]{0,60}\b(?:safeguarding|safety|supervision|access control|privacy|food[- ]safety|allergy|medication)\b[^.!?\n]{0,30}\b(?:rules?|procedures?|checks?|controls?|requirements?|instructions?|protections?)\b/iu,
+  /\bI\s+(?:refuse|decline)\s+(?:to\s+)?(?:(?:complete|take|accept|follow|submit to|undergo|agree to|cooperate with)\s+)?(?:a\s+)?(?:background check|screening|safeguarding training|safety training|supervision|two[- ]adult rule|code of conduct|boundary rules?|safety (?:rules?|procedures?|checks?))\b/iu,
+  /\bI\s+(?:will not|won't|do not|don't)\s+(?:complete|take|accept|follow|submit to|undergo|agree to|cooperate with)\s+(?:a\s+)?(?:background check|screening|safeguarding training|safety training|supervision|two[- ]adult rule|code of conduct|boundary rules?|safety (?:rules?|procedures?|checks?))\b/iu,
+];
+
+const ROLE_SPECIFIC_INCIDENT_PATTERNS: Readonly<
+  Partial<Record<RoleSafetyConcern, readonly RegExp[]>>
+> = {
+  INFANT_CARE: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:left|leave)\b[^.!?\n]{0,40}\b(?:an?\s+)?(?:infant|baby|newborn)\b[^.!?\n]{0,30}\b(?:alone|unattended|unsupervised)\b/iu,
+  ],
+  CHILD_SUPERVISION: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:left|leave)\b[^.!?\n]{0,40}\b(?:a\s+)?(?:child|children|youth)\b[^.!?\n]{0,30}\b(?:alone|unattended|unsupervised)\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?lost track of\b[^.!?\n]{0,40}\b(?:a\s+)?(?:child|children|youth)\b/iu,
+  ],
+  VULNERABLE_ADULT_CARE: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:left|leave)\b[^.!?\n]{0,40}\b(?:a\s+)?(?:vulnerable|dependent|frail)\s+adult\b[^.!?\n]{0,30}\b(?:alone|unattended|unsupervised)\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?lost track of\b[^.!?\n]{0,40}\b(?:a\s+)?(?:vulnerable|dependent|frail)\s+adult\b/iu,
+  ],
+  PASSENGER_TRANSPORT: [
+    /\b(?:my\s+)?driver'?s license\s+(?:is|was|has been|had been)\s+(?:suspended|revoked)\b/iu,
+    /\bI\s+(?:drive|drove|have driven)\b[^.!?\n]{0,50}\b(?:passengers?|people|members|children|youth|seniors)\b[^.!?\n]{0,40}\b(?:drunk|high|intoxicated|impaired|without (?:a\s+)?(?:valid )?license)\b/iu,
+  ],
+  FINANCIAL_HANDLING: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:stole|embezzled|misused|diverted|falsified)\b[^.!?\n]{0,60}\b(?:money|cash|funds|donations|offerings|expenses?|reimbursements?|a purchase card)\b/iu,
+  ],
+  PASTORAL_COUNSELING: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:violated|ignored|crossed)\b[^.!?\n]{0,60}\b(?:pastoral|counseling|counselling|mentoring|confidentiality|professional)\b[^.!?\n]{0,30}\b(?:boundaries|confidence|confidentiality|rules?|standards?)\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?disclosed\b[^.!?\n]{0,60}\b(?:pastoral|counseling|counselling|mentoring)\b[^.!?\n]{0,30}\b(?:confidences?|information|records?)\b[^.!?\n]{0,30}\bwithout (?:permission|authorization)\b/iu,
+  ],
+  HOME_VISITATION: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:entered|went into|remained in)\b[^.!?\n]{0,50}\b(?:someone'?s|a member'?s|a parishioner'?s|their)\s+home\b[^.!?\n]{0,40}\bwithout (?:permission|authorization|an appointment)\b/iu,
+  ],
+  FOOD_SERVICE: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:ignored|disregarded)\b[^.!?\n]{0,60}\b(?:allerg(?:y|ies)|allergen instructions?|cross[- ]contamination|food[- ]safety|unsafe food|expired food)\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?served\b[^.!?\n]{0,60}\b(?:a known allergen|food containing an allergen|unsafe food|expired food)\b/iu,
+  ],
+  MEDICAL_FIRST_AID: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:gave|administered|mixed up|misused)\b[^.!?\n]{0,50}\b(?:the wrong )?(?:medication|medicine|dose|first[- ]aid treatment)\b/iu,
+  ],
+  FACILITIES_EQUIPMENT: [
+    /\bI\s+(?:(?:have|had)\s+)?(?:disabled|removed|ignored|bypassed|worked without)\b[^.!?\n]{0,60}\b(?:safety guards?|lockouts?|protective equipment|ppe|worksite rules?|equipment checks?)\b/iu,
+  ],
+  SECURITY_EMERGENCY_RESPONSE: [
+    /\bI\s+(?:(?:have|had)\s+)?used\b[^.!?\n]{0,30}\b(?:excessive|unnecessary) force\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?threatened\b[^.!?\n]{0,50}\b(?:someone|people|a person|a member|a volunteer)\b[^.!?\n]{0,30}\bwith (?:a\s+)?weapon\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?escalated\b[^.!?\n]{0,60}\b(?:a confrontation|an incident|a dispute)\b[^.!?\n]{0,30}\b(?:to|into) violence\b/iu,
+  ],
+  SENSITIVE_INFORMATION_ACCESS: [
+    /\bI\s+(?:(?:have|had)\s+)?misused\b[^.!?\n]{0,60}\b(?:confidential|private|member|donor|pastoral|counseling|personal)\b[^.!?\n]{0,30}\b(?:data|information|records?|files?|accounts?)\b/iu,
+    /\bI\s+(?:(?:have|had)\s+)?(?:shared|disclosed|accessed|copied|downloaded)\b[^.!?\n]{0,60}\b(?:confidential|private|member|donor|pastoral|counseling|personal)\b[^.!?\n]{0,30}\b(?:data|information|records?|files?|accounts?)\b[^.!?\n]{0,30}\b(?:without (?:permission|authorization)|improperly|inappropriately)\b/iu,
+  ],
+};
 
 const CLOSE_RELATIONSHIP_PATTERN =
   /\b(?:family|mothers?|fathers?|parents?|brothers?|sisters?|siblings?|spouse|wives?|husbands?|partners?|sons?|daughters?|relatives?|loved ones?)\b/iu;
@@ -132,16 +211,50 @@ export function mergeRoleSafetyConcerns(
 }
 
 export function detectRoleSafetyConcerns(text: string): RoleSafetyConcern[] {
-  const grounded =
-    GROUNDED_ROLE_SAFETY_PATTERNS.some((pattern) => pattern.test(text)) ||
-    (CLOSE_RELATIONSHIP_PATTERN.test(text) &&
-      RELATIONSHIP_REFUSAL_PATTERN.test(text));
-  if (!grounded) return [];
-  return roleSafetyConcernsSchema.parse(
-    Object.entries(ROLE_SAFETY_ACTIVITY_PATTERNS)
-      .filter(([, pattern]) => pattern.test(text))
-      .map(([concern]) => concern),
+  const sentences = text
+    .split(/(?<=[.!?])\s+|\n+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const groundedSentences = sentences.filter(
+    (sentence) =>
+      GROUNDED_ROLE_SAFETY_PATTERNS.some((pattern) => pattern.test(sentence)) ||
+      GENERAL_GROUNDED_ROLE_SAFETY_PATTERNS.some((pattern) =>
+        pattern.test(sentence),
+      ) ||
+      (CLOSE_RELATIONSHIP_PATTERN.test(sentence) &&
+        RELATIONSHIP_REFUSAL_PATTERN.test(sentence)),
   );
+  const relationshipRefusalWindows = sentences
+    .slice(0, -1)
+    .map((sentence, index) => `${sentence} ${sentences[index + 1]}`)
+    .filter(
+      (window) =>
+        CLOSE_RELATIONSHIP_PATTERN.test(window) &&
+        RELATIONSHIP_REFUSAL_PATTERN.test(window),
+    );
+  const roleSpecific = Object.entries(ROLE_SAFETY_ACTIVITY_PATTERNS)
+    .filter(([concern, activityPattern]) => {
+      const typedConcern = concern as RoleSafetyConcern;
+      return (
+        groundedSentences.some((sentence) => activityPattern.test(sentence)) ||
+        relationshipRefusalWindows.some((window) =>
+          activityPattern.test(window),
+        ) ||
+        (ROLE_SPECIFIC_INCIDENT_PATTERNS[typedConcern] ?? []).some((pattern) =>
+          pattern.test(text),
+        )
+      );
+    })
+    .map(([concern]) => concern as RoleSafetyConcern);
+  const generalGrounded = GENERAL_GROUNDED_ROLE_SAFETY_PATTERNS.some(
+    (pattern) => pattern.test(text),
+  );
+  return roleSafetyConcernsSchema.parse([
+    ...roleSpecific,
+    ...(generalGrounded && roleSpecific.length === 0
+      ? (["GENERAL_ROLE_SAFETY"] as const)
+      : []),
+  ]);
 }
 
 export function deriveRoleSafetyConcerns(
@@ -175,6 +288,22 @@ export function roleSafetyConcernAcknowledgement(
         return "passenger transport";
       case "FINANCIAL_HANDLING":
         return "financial handling";
+      case "PASTORAL_COUNSELING":
+        return "pastoral care, counseling, or mentoring";
+      case "HOME_VISITATION":
+        return "home visitation";
+      case "FOOD_SERVICE":
+        return "food service";
+      case "MEDICAL_FIRST_AID":
+        return "first-aid or medical-support roles";
+      case "FACILITIES_EQUIPMENT":
+        return "facilities or equipment work";
+      case "SECURITY_EMERGENCY_RESPONSE":
+        return "security or emergency-response roles";
+      case "SENSITIVE_INFORMATION_ACCESS":
+        return "access to member records or privileged systems";
+      case "GENERAL_ROLE_SAFETY":
+        return "volunteer placement generally";
     }
   });
   const roleList = new Intl.ListFormat("en-US", {

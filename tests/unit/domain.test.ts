@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   GROUP_PERMISSIONS,
+  ROLE_SAFETY_PROFILE_STATEMENTS,
   deterministicSearchExplanation,
   relevanceWithProfileLimitations,
   rerankerOutputSchema,
@@ -144,6 +145,31 @@ describe("grounded hybrid search", () => {
       hasRelevantLimitation: true,
       hasRelevantExclusion: false,
     });
+  });
+
+  it("caps every match when the approved profile requires general role-safety review", () => {
+    const explanation = deterministicSearchExplanation({
+      query: "flower arranging volunteer",
+      exactTerms: ["flower arranging"],
+      approvedText: `This volunteer has ten years of flower arranging experience. ${ROLE_SAFETY_PROFILE_STATEMENTS.GENERAL_ROLE_SAFETY}`,
+      lexicalRank: 1,
+      vectorRank: 1,
+      fuzzyRank: null,
+    });
+
+    expect(explanation).toMatchObject({
+      relevance: "MEDIUM",
+      hasRelevantLimitation: true,
+      hasRoleSafetyCaution: true,
+    });
+    expect(explanation.evidence).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS.GENERAL_ROLE_SAFETY,
+    );
+    expect(explanation.reason).toContain("before any placement");
+    expect(explanation.cautions.join(" ")).toContain(
+      "do not characterize the member as cleared or safe",
+    );
+    expect(relevanceWithProfileLimitations("HIGH", explanation)).toBe("MEDIUM");
   });
 
   it("bounds reranked search results to the top ten candidates", () => {

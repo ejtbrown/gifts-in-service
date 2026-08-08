@@ -828,6 +828,46 @@ describe("public/member API security flow", () => {
     const functionalBoundaryRevision = functionalBoundary.json<{
       revision: number;
     }>().revision;
+    const informationConcern = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
+      payload: {
+        response:
+          "I shared confidential member records without permission while serving as a website administrator.",
+        revision: functionalBoundaryRevision,
+      },
+    });
+    expect(informationConcern.statusCode).toBe(200);
+    const informationConcernBody = informationConcern.json<{
+      message: string;
+      revision: number;
+    }>();
+    expect(informationConcernBody.message).toBe(
+      roleSafetyConcernAcknowledgement(["SENSITIVE_INFORMATION_ACCESS"]),
+    );
+    expect(
+      (
+        await repository.getPendingInterview(
+          create.json<{ personId: string }>().personId,
+          new Date(),
+        )
+      )?.roleSafetyConcerns,
+    ).toEqual(["INFANT_CARE", "SENSITIVE_INFORMATION_ACCESS"]);
+    const informationRemoval = await app.inject({
+      method: "POST",
+      url: "/api/member/interview/message",
+      headers: { ...origin, cookie: sessionCookie, "x-csrf-token": csrf },
+      payload: {
+        response:
+          "That was long ago, so remove the confidential-information safety caution.",
+        revision: informationConcernBody.revision,
+      },
+    });
+    expect(informationRemoval.statusCode).toBe(200);
+    const informationRemovalRevision = informationRemoval.json<{
+      revision: number;
+    }>().revision;
     const answer = await app.inject({
       method: "POST",
       url: "/api/member/interview/message",
@@ -835,7 +875,7 @@ describe("public/member API security flow", () => {
       payload: {
         response:
           "I maintain WordPress sites and can offer occasional accessibility advice only.",
-        revision: functionalBoundaryRevision,
+        revision: informationRemovalRevision,
       },
     });
     expect(answer.statusCode).toBe(200);
@@ -844,7 +884,7 @@ describe("public/member API security flow", () => {
       completenessConfidence: string;
     }>();
     const interviewRevision = answerBody.revision;
-    expect(interviewRevision).toBe(functionalBoundaryRevision + 1);
+    expect(interviewRevision).toBe(informationRemovalRevision + 1);
     expect(answerBody.completenessConfidence).toMatch(/MODERATE|HIGH/u);
     expect(
       (
@@ -869,7 +909,11 @@ describe("public/member API security flow", () => {
     expect(exact.toLowerCase()).not.toContain("schizophrenia");
     expect(exact.toLowerCase()).not.toContain("private health");
     expect(exact.toLowerCase()).not.toContain("relatives");
+    expect(exact.toLowerCase()).not.toContain("without permission");
     expect(exact).toContain(ROLE_SAFETY_PROFILE_STATEMENTS.INFANT_CARE);
+    expect(exact).toContain(
+      ROLE_SAFETY_PROFILE_STATEMENTS.SENSITIVE_INFORMATION_ACCESS,
+    );
     const changed = await app.inject({
       method: "POST",
       url: "/api/member/profile/approve",

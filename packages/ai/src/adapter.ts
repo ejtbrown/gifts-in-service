@@ -7,10 +7,10 @@ import type {
 } from "@gis/shared";
 
 export const PROMPT_VERSIONS = {
-  interviewer: "interviewer-2026-08-07.v8",
-  profileDrafter: "profile-drafter-2026-08-07.v3",
+  interviewer: "interviewer-2026-08-07.v9",
+  profileDrafter: "profile-drafter-2026-08-07.v4",
   searchPlanner: "search-planner-2026-07-15.v1",
-  searchReranker: "search-reranker-2026-08-07.v4",
+  searchReranker: "search-reranker-2026-08-07.v5",
 } as const;
 
 export interface ProfileDraft {
