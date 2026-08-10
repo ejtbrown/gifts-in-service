@@ -37,16 +37,16 @@
     "@eslint/js": "9.34.0",
     "@playwright/test": "1.62.1",
     "@types/node": "24.3.0",
-    "@typescript-eslint/eslint-plugin": "8.65.0",
-    "@typescript-eslint/parser": "8.65.0",
+    "@typescript-eslint/eslint-plugin": "8.66.0",
+    "@typescript-eslint/parser": "8.66.0",
     "concurrently": "10.0.4",
     "esbuild": "0.28.1",
     "eslint": "9.34.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "prettier": "3.9.6",
-    "tsx": "4.23.1",
+    "tsx": "4.23.10",
     "typescript": "5.9.2",
-    "typescript-eslint": "8.65.0",
+    "typescript-eslint": "8.66.0",
     "vitest": "4.1.10"
   }
 }
