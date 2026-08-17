@@ -2273,7 +2273,7 @@ export async function buildApp(
           .map((item) => byId.get(item.id))
           .filter((candidate) => candidate !== undefined)
           .slice(0, SEARCH_RESULT_LIMIT);
-        let generated = null;
+        let generated: ReturnType<typeof validateGroundedResults>;
         try {
           const output = rerankerOutputSchema.parse(
             await ai.rerank(
