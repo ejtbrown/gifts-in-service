@@ -11,12 +11,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-rds-data": "3.1105.0",
+    "@aws-sdk/client-rds-data": "3.1110.0",
     "@gis/shared": "workspace:*",
-    "pg": "8.22.0"
+    "pg": "8.23.0"
   },
   "devDependencies": {
-    "@types/pg": "8.20.4",
+    "@types/pg": "8.21.0",
     "typescript": "5.9.2"
   }
 }
