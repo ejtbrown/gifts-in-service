@@ -16,3 +16,4 @@ test-results/
 .obsidian/
 *.log
 *.tsbuildinfo
+.codex-resume
