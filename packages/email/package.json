@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-sesv2": "3.1110.0",
+    "@aws-sdk/client-sesv2": "3.1126.0",
     "@gis/shared": "workspace:*",
     "nodemailer": "9.0.5"
   },
