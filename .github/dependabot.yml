@@ -23,7 +23,7 @@ updates:
     open-pull-requests-limit: 3
     groups:
       codeql-action:
-        patterns: ["github/codeql-action/*"]
+        patterns: ["github/codeql-action"]
   - package-ecosystem: terraform
     directory: /infra/environments/dev
     schedule: { interval: weekly }
