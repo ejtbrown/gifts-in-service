@@ -13,7 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-sesv2": "3.1130.0",
     "@gis/shared": "workspace:*",
-    "nodemailer": "9.1.1"
+    "nodemailer": "10.0.10"
   },
   "devDependencies": {
     "@types/nodemailer": "8.0.1",
