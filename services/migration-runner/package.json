@@ -13,7 +13,7 @@
     "@gis/auth": "workspace:*",
     "@gis/db": "workspace:*",
     "@gis/shared": "workspace:*",
-    "dotenv": "17.4.2"
+    "dotenv": "18.0.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "8.10.163",
