@@ -1,5 +1,5 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import { emitMetric } from "@gis/shared";
 
 export interface OutboundEmail {
@@ -50,7 +50,7 @@ export function magicLinkEmail(
 }
 
 export class MailpitEmailAdapter implements EmailAdapter {
-  readonly #transport: nodemailer.Transporter;
+  readonly #transport: Transporter;
   readonly #from: string;
 
   constructor(
