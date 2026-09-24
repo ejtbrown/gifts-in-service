@@ -1,4 +1,6 @@
-import "dotenv/config";
+import { config as loadDotEnv } from "dotenv";
+
+loadDotEnv();
 import { loadConfig } from "@gis/shared";
 import { buildApp } from "./app.js";
 
