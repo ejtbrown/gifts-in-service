@@ -45,6 +45,8 @@ jobs:
           TF_VAR_ses_manage_sender_identity: ${{ vars.SES_MANAGE_SENDER_IDENTITY || 'true' }}
           TF_VAR_budget_alert_email: ${{ vars.BUDGET_ALERT_EMAIL }}
           TF_VAR_github_repository: ${{ github.repository }}
+          TF_VAR_custom_domain_name: ${{ vars.CUSTOM_DOMAIN_NAME }}
+          TF_VAR_route53_zone_id: ${{ vars.ROUTE53_ZONE_ID }}
         run: |
           terraform -chdir=infra/environments/dev init -input=false \
             -backend-config=bucket=${{ vars.TF_STATE_BUCKET }} \
