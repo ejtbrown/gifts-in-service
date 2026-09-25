@@ -6,13 +6,35 @@ const repositoryRoot = resolve(import.meta.dirname, "../..");
 
 describe("infrastructure security invariants", () => {
   it("requires the modern TLS policy on custom certificates", async () => {
-    const edge = await readFile(
-      resolve(repositoryRoot, "infra/modules/storage-edge/main.tf"),
-      "utf8",
-    );
+    const [edge, application, planWorkflow] = await Promise.all([
+      readFile(
+        resolve(repositoryRoot, "infra/modules/storage-edge/main.tf"),
+        "utf8",
+      ),
+      readFile(
+        resolve(repositoryRoot, "infra/modules/application/main.tf"),
+        "utf8",
+      ),
+      readFile(
+        resolve(repositoryRoot, ".github/workflows/terraform-plan.yml"),
+        "utf8",
+      ),
+    ]);
 
     expect(edge).toContain(
       'var.custom_domain_name == "" ? "TLSv1" : "TLSv1.2_2021"',
+    );
+    expect(application).toContain(
+      "aws_acm_certificate_validation.custom[0].certificate_arn",
+    );
+    expect(application).toMatch(
+      /resource "aws_route53_record" "custom_ipv6"[\s\S]*?type\s+=\s+"AAAA"/u,
+    );
+    expect(planWorkflow).toContain(
+      "TF_VAR_custom_domain_name: ${{ vars.CUSTOM_DOMAIN_NAME }}",
+    );
+    expect(planWorkflow).toContain(
+      "TF_VAR_route53_zone_id: ${{ vars.ROUTE53_ZONE_ID }}",
     );
   });
 

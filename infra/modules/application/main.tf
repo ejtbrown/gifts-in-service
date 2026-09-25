@@ -213,7 +213,7 @@ module "edge" {
   origin_verify_secret  = random_password.origin_verify.result
   waf_count_mode        = var.waf_count_mode
   custom_domain_name    = var.custom_domain_name
-  acm_certificate_arn   = var.custom_domain_name == "" ? "" : aws_acm_certificate.custom[0].arn
+  acm_certificate_arn   = var.custom_domain_name == "" ? "" : aws_acm_certificate_validation.custom[0].certificate_arn
   magic_link_rate_limit = 100
   redemption_rate_limit = 200
   interview_rate_limit  = 300
@@ -225,6 +225,18 @@ resource "aws_route53_record" "custom" {
   zone_id = var.route53_zone_id
   name    = var.custom_domain_name
   type    = "A"
+  alias {
+    name                   = module.edge.distribution_domain_name
+    zone_id                = module.edge.distribution_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "custom_ipv6" {
+  count   = var.custom_domain_name == "" || var.route53_zone_id == "" ? 0 : 1
+  zone_id = var.route53_zone_id
+  name    = var.custom_domain_name
+  type    = "AAAA"
   alias {
     name                   = module.edge.distribution_domain_name
     zone_id                = module.edge.distribution_zone_id
