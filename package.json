@@ -20,6 +20,8 @@
     "test": "vitest run --project unit",
     "test:integration": "bash -c 'set -a; source .env.example; set +a; pnpm db:migrate && pnpm db:seed && vitest run --project integration'",
     "test:e2e": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:smoke:deployment": "tsx scripts/deployment-smoke.ts",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "eval:ai": "vitest run --project ai-eval",
     "db:migrate": "tsx services/migration-runner/src/cli.ts migrate",

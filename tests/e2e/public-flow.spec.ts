@@ -82,7 +82,7 @@ async function messageIdsFor(
   );
 }
 
-test("fictional member resumes a pending interview through a new link, approves it, reconfirms, and deletes it", async ({
+test("@smoke fictional member resumes a pending interview through a new link, approves it, reconfirms, and deletes it", async ({
   page,
   request,
 }) => {

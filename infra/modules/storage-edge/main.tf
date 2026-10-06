@@ -108,6 +108,16 @@ resource "aws_cloudfront_response_headers_policy" "security" {
   }
 }
 
+resource "aws_cloudfront_function" "viewer_request" {
+  name    = "${var.prefix}-viewer-request"
+  runtime = "cloudfront-js-2.0"
+  comment = "Canonical-host redirects and SPA route rewrites"
+  publish = true
+  code = templatefile("${path.module}/viewer-request.js.tftpl", {
+    canonical_host_json = jsonencode(var.custom_domain_name)
+  })
+}
+
 resource "aws_wafv2_web_acl" "this" {
   provider = aws.us_east_1
   name     = "${var.prefix}-cloudfront"
@@ -230,6 +240,10 @@ resource "aws_cloudfront_distribution" "this" {
     compress                   = true
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.viewer_request.arn
+    }
   }
   ordered_cache_behavior {
     path_pattern               = "/api/*"
@@ -241,18 +255,10 @@ resource "aws_cloudfront_distribution" "this" {
     cache_policy_id            = aws_cloudfront_cache_policy.api_disabled.id
     origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
-  }
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.viewer_request.arn
+    }
   }
 
   restrictions {
