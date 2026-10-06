@@ -5,6 +5,33 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 
 describe("infrastructure security invariants", () => {
+  it("overrides vulnerable transitive releases", async () => {
+    const workspace = await readFile(
+      resolve(repositoryRoot, "pnpm-workspace.yaml"),
+      "utf8",
+    );
+
+    expect(workspace).toContain('"fast-uri@^3.0.0": 3.1.8');
+    expect(workspace).toContain('"fast-uri@^4.0.0": 4.2.1');
+    expect(workspace).toContain('"ip-address@^10.2.0": 10.7.3');
+  });
+
+  it("keeps CodeQL actions on one immutable release", async () => {
+    const [workflow, dependabot] = await Promise.all([
+      readFile(resolve(repositoryRoot, ".github/workflows/codeql.yml"), "utf8"),
+      readFile(resolve(repositoryRoot, ".github/dependabot.yml"), "utf8"),
+    ]);
+    const actionPins = [
+      ...workflow.matchAll(
+        /github\/codeql-action\/(?:init|analyze)@([a-f0-9]{40})/gu,
+      ),
+    ].map((match) => match[1]);
+
+    expect(actionPins).toHaveLength(2);
+    expect(new Set(actionPins)).toHaveLength(1);
+    expect(dependabot).toContain('patterns: ["github/codeql-action/*"]');
+  });
+
   it("requires the modern TLS policy on custom certificates", async () => {
     const [edge, application, planWorkflow] = await Promise.all([
       readFile(
