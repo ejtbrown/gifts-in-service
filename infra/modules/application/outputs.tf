@@ -1,4 +1,5 @@
 output "cloudfront_url" { value = module.edge.cloudfront_url }
+output "public_base_url" { value = local.public_base_url }
 output "api_endpoint" { value = module.api.api_endpoint }
 output "cognito_user_pool_id" { value = module.cognito.user_pool_id }
 output "cognito_client_id" { value = module.cognito.client_id }

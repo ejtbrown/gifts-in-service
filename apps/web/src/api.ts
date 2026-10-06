@@ -51,11 +51,33 @@ export async function api<T>(
     cache: "no-store",
     referrerPolicy: "no-referrer",
   });
-  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const isJson =
+    contentType.includes("application/json") || contentType.includes("+json");
+  let body: unknown = null;
+  if (isJson) {
+    try {
+      body = (await response.json()) as unknown;
+    } catch {
+      body = null;
+    }
+  }
+  const error =
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "string"
+      ? body.error
+      : null;
   if (!response.ok)
     throw new ApiError(
-      body.error ?? "The request could not be completed.",
+      error ?? "The request could not be completed.",
       response.status,
+    );
+  if (body === null)
+    throw new ApiError(
+      "The service returned an unexpected response. Reload the page and try again.",
+      502,
     );
   return body as T;
 }

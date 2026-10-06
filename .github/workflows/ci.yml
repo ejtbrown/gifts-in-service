@@ -190,4 +190,11 @@ jobs:
           distribution=$(terraform -chdir=infra/environments/${DEPLOY_ENV} output -raw distribution_id)
           key=$(terraform -chdir=infra/environments/${DEPLOY_ENV} output -raw kms_key_arn)
           aws s3 sync apps/web/dist "s3://${bucket}" --delete --sse aws:kms --sse-kms-key-id "${key}"
-          aws cloudfront create-invalidation --distribution-id "${distribution}" --paths '/*'
+          invalidation=$(aws cloudfront create-invalidation --distribution-id "${distribution}" --paths '/*' --query 'Invalidation.Id' --output text)
+          aws cloudfront wait invalidation-completed --distribution-id "${distribution}" --id "${invalidation}"
+      - name: Smoke-test deployed workflows
+        run: |
+          SMOKE_BASE_URL=$(terraform -chdir=infra/environments/${DEPLOY_ENV} output -raw public_base_url)
+          SMOKE_LEGACY_URL=$(terraform -chdir=infra/environments/${DEPLOY_ENV} output -raw cloudfront_url)
+          export SMOKE_BASE_URL SMOKE_LEGACY_URL
+          pnpm test:smoke:deployment

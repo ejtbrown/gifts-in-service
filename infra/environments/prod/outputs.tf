@@ -1,4 +1,5 @@
 output "cloudfront_url" { value = module.application.cloudfront_url }
+output "public_base_url" { value = module.application.public_base_url }
 output "api_endpoint" { value = module.application.api_endpoint }
 output "cognito_user_pool_id" { value = module.application.cognito_user_pool_id }
 output "cognito_client_id" { value = module.application.cognito_client_id }

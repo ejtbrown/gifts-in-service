@@ -65,6 +65,20 @@ describe("infrastructure security invariants", () => {
     );
   });
 
+  it("keeps SPA routing separate from API errors and canonicalizes the viewer host", async () => {
+    const edge = await readFile(
+      resolve(repositoryRoot, "infra/modules/storage-edge/main.tf"),
+      "utf8",
+    );
+
+    expect(edge).toContain(
+      'resource "aws_cloudfront_function" "viewer_request"',
+    );
+    expect(edge.match(/function_association \{/gu)).toHaveLength(2);
+    expect(edge).not.toContain("custom_error_response");
+    expect(edge).toContain("viewer-request.js.tftpl");
+  });
+
   it("fails production planning without a custom domain and managed DNS zone", async () => {
     const [application, variables] = await Promise.all([
       readFile(
