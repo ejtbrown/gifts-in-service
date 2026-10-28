@@ -11,9 +11,9 @@ describe("infrastructure security invariants", () => {
       "utf8",
     );
 
-    expect(workspace).toContain('"fast-uri@^3.0.0": 3.1.8');
-    expect(workspace).toContain('"fast-uri@^4.0.0": 4.2.1');
-    expect(workspace).toContain('"ip-address@^10.2.0": 10.7.3');
+    expect(workspace).toContain('"fast-uri@^3.0.0": 3.1.9');
+    expect(workspace).toContain('"fast-uri@^4.0.0": 4.2.3');
+    expect(workspace).toContain('"ip-address@^10.2.0": 10.7.4');
   });
 
   it("keeps CodeQL actions on one immutable release", async () => {
