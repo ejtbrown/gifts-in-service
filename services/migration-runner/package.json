@@ -8,12 +8,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "3.1145.0",
+    "@aws-sdk/client-secrets-manager": "3.1156.0",
     "@gis/ai": "workspace:*",
     "@gis/auth": "workspace:*",
     "@gis/db": "workspace:*",
     "@gis/shared": "workspace:*",
-    "dotenv": "18.0.5"
+    "dotenv": "18.0.9"
   },
   "devDependencies": {
     "@types/aws-lambda": "8.10.164",
