@@ -14,18 +14,18 @@
   },
   "dependencies": {
     "@fastify/aws-lambda": "6.4.2",
-    "@fastify/cookie": "11.1.3",
+    "@fastify/cookie": "11.1.5",
     "@fastify/helmet": "13.2.0",
-    "@fastify/rate-limit": "11.2.1",
-    "@aws-sdk/client-cognito-identity-provider": "3.1156.0",
+    "@fastify/rate-limit": "11.2.2",
+    "@aws-sdk/client-cognito-identity-provider": "3.1163.0",
     "@gis/ai": "workspace:*",
     "@gis/auth": "workspace:*",
     "@gis/db": "workspace:*",
     "@gis/email": "workspace:*",
     "@gis/shared": "workspace:*",
     "dotenv": "18.0.9",
-    "fastify": "5.12.7",
-    "jose": "6.2.13",
+    "fastify": "5.12.8",
+    "jose": "6.2.15",
     "zod": "4.6.7"
   },
   "devDependencies": {
