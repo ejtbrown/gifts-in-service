@@ -9,6 +9,8 @@ export class ApiError extends Error {
 
 let memberCsrf = "";
 let staffCsrf = "";
+let staffSessionGeneration = 0;
+let staffSessionRequest: Promise<unknown> | null = null;
 let memberSessionRequest: Promise<unknown> | null = null;
 
 export function setMemberCsrf(value: string): void {
@@ -17,6 +19,8 @@ export function setMemberCsrf(value: string): void {
 
 export function setStaffCsrf(value: string): void {
   staffCsrf = value;
+  staffSessionGeneration += 1;
+  staffSessionRequest = null;
 }
 
 export function getMemberSession<
@@ -33,6 +37,24 @@ export function getMemberSession<
       });
   }
   return memberSessionRequest as Promise<T>;
+}
+
+export function getStaffSession<T extends { csrfToken: string }>(): Promise<T> {
+  if (!staffSessionRequest) {
+    const generation = staffSessionGeneration;
+    const request = api<T>("/api/staff/me")
+      .then((response) => {
+        if (generation !== staffSessionGeneration)
+          throw new Error("Staff session changed. Sign in again.");
+        staffCsrf = response.csrfToken;
+        return response;
+      })
+      .finally(() => {
+        if (staffSessionRequest === request) staffSessionRequest = null;
+      });
+    staffSessionRequest = request;
+  }
+  return staffSessionRequest as Promise<T>;
 }
 
 export async function api<T>(
