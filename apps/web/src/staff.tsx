@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
 import QRCode from "qrcode";
-import { api, setStaffCsrf } from "./api.js";
+import { api, getStaffSession, setStaffCsrf } from "./api.js";
 import { Loading, Notice } from "./components.js";
 import { useConfig } from "./context.js";
 import type { StaffMe } from "./types.js";
@@ -138,10 +138,9 @@ function useStaff(): { me: StaffMe | null; error: string } {
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    api<StaffMe>("/api/staff/me")
+    getStaffSession<StaffMe>()
       .then((value) => {
         if (active) {
-          setStaffCsrf(value.csrfToken);
           setMe(value);
         }
       })
